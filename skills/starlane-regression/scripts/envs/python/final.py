@@ -1,4 +1,4 @@
-"""Python final-stage backend for a selected Starlane regression row."""
+"""Python final-stage env for a selected Starlane regression row."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 
-from regression_backend_common import (
+from common import (
     RegressionArgs,
     apply_spec_condition,
     build_specs,
@@ -25,7 +25,7 @@ from regression_backend_common import (
     fail,
     format_coef,
     make_base_sample,
-    prepare_backend_data,
+    prepare_regression_data,
     parse_cli_values,
     read_data,
     run_spec,
@@ -180,7 +180,7 @@ def run_final(values: list[str], output_arg: str | None = None, source_path: str
     optional_originals = split_words(args.meds) + split_words(args.mods) + split_words(args.iv)
     df = read_data(args.input_dta)
     ensure_columns(df, [*y_vars, *x_vars, *cv_all, args.panelvar, args.timevar, *optional_originals])
-    df = prepare_backend_data(df, args)
+    df = prepare_regression_data(df, args)
     df, panelvar = encode_panel_if_needed(df, args.panelvar)
     timevar = args.timevar
     specs = build_specs(args, cv_subset)
@@ -242,16 +242,16 @@ def run_final(values: list[str], output_arg: str | None = None, source_path: str
     docx_path = result_dir / "final_result.docx"
     write_docx(docx_path, rows, metadata)
 
-    run_note = result_dir / "python_backend_run_note.md"
+    run_note = result_dir / "python_env_run_note.md"
     run_note.write_text(
         "\n".join(
             [
-                "# Python Backend Run Note",
+                "# Python Env Run Note",
                 "",
-                "This Python backend implements the Starlane summary/final workflow contract across the same section families as the Stata backend.",
+                "This Python env implements the Starlane summary/final workflow contract across the same section families as the Stata env.",
                 "",
                 "It uses an internal numpy OLS implementation with absorbed panel and time fixed effects.",
-                "Numerical equivalence with Stata reghdfe is not guaranteed until cross-backend tests are added.",
+                "Numerical equivalence with Stata reghdfe is not guaranteed until cross-env tests are added.",
                 "",
                 "Raw args:",
                 "",

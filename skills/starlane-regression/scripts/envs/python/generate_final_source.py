@@ -9,7 +9,7 @@ from pathlib import Path
 
 def parse_args(argv: list[str]) -> tuple[list[str], Path]:
     if len(argv) < 2:
-        raise ValueError("Usage: generate_regression_py.py <args_json_or_20_positional> [output_path]")
+        raise ValueError("Usage: generate_final_source.py <args_json_or_20_positional> [output_path]")
     first = argv[1]
     if first.strip().startswith("["):
         values = json.loads(first)
@@ -37,7 +37,7 @@ SCRIPTS_DIR = Path({scripts_dir_text!r})
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from regression_final import run_final
+from final import run_final
 
 
 ARGS = {payload}

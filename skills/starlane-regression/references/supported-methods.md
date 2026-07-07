@@ -15,9 +15,9 @@
 - Descriptive statistics for the final selected model set.
 - Combination summary table generation.
 - Final result generation from a user-selected candidate row.
-- Reproducible source artifact generation for the selected backend.
-- Python backend for the same section families as Stata.
-- Stata backend with reproducible `.do` generation and Word table export when the local Stata environment supports it.
+- Reproducible source artifact generation for the selected env.
+- Python env for the supported section families.
+- Stata env with reproducible `.do` generation and Word table export when the local Stata environment supports it.
 
 ## Not Supported
 

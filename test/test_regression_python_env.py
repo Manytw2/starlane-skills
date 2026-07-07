@@ -1,4 +1,4 @@
-"""Regression backend smoke and contract test for the demo dataset."""
+"""Regression env smoke and contract test for the demo dataset."""
 
 from __future__ import annotations
 
@@ -16,8 +16,10 @@ from docx import Document
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills" / "starlane-regression" / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-from regression_backend_common import RegressionArgs, compute_cv_subsets, split_words
+PYTHON_ENV_SCRIPTS = SCRIPTS / "envs" / "python"
+STATA_ENV_SCRIPTS = SCRIPTS / "envs" / "stata"
+sys.path.insert(0, str(PYTHON_ENV_SCRIPTS))
+from common import RegressionArgs, compute_cv_subsets, split_words
 
 DEMO_DTA = Path("/Users/daydream/Desktop/demo.dta")
 OUT = ROOT / ".starlane-test" / "python-demo"
@@ -123,7 +125,7 @@ def test_demo_enumeration_cardinality() -> None:
 
 def run_python_workflow(out_dir: Path) -> tuple[pd.DataFrame, Path]:
     env = {**os.environ, "STARLANE_EXPORT": str(out_dir), "STARLANE_TMP": str(out_dir / "tmp")}
-    run([*UV_PYTHON, str(SCRIPTS / "regression_summary.py"), json.dumps(SUMMARY_ARGS, ensure_ascii=False)], env=env)
+    run([*UV_PYTHON, str(PYTHON_ENV_SCRIPTS / "summary.py"), json.dumps(SUMMARY_ARGS, ensure_ascii=False)], env=env)
     summary_path = out_dir / "combination_summary.csv"
     summary = pd.read_csv(summary_path)
     first = summary.iloc[0]
@@ -133,7 +135,7 @@ def run_python_workflow(out_dir: Path) -> tuple[pd.DataFrame, Path]:
     run(
         [
             *UV_PYTHON,
-            str(SCRIPTS / "generate_regression_py.py"),
+            str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
             json.dumps(final_args, ensure_ascii=False),
             str(generated_source),
         ],
@@ -150,7 +152,7 @@ def write_stata_summary_runner(path: Path, export_dir: Path, tmp_dir: Path) -> N
             [
                 f'global STARLANE_EXPORT "{export_dir.as_posix()}"',
                 f'global STARLANE_TMP "{tmp_dir.as_posix()}"',
-                f'do "{(SCRIPTS / "regression_summary.do").as_posix()}" {quoted}',
+                f'do "{(STATA_ENV_SCRIPTS / "summary.do").as_posix()}" {quoted}',
                 "exit",
             ]
         )
@@ -197,7 +199,7 @@ def run_stata_workflow(stata_bin: str, out_dir: Path) -> tuple[pd.DataFrame, Pat
     run(
         [
             *UV_PYTHON,
-            str(SCRIPTS / "generate_regression_do.py"),
+            str(STATA_ENV_SCRIPTS / "generate_final_source.py"),
             json.dumps(final_args, ensure_ascii=False),
             str(generated_do),
         ]
@@ -209,7 +211,7 @@ def run_stata_workflow(stata_bin: str, out_dir: Path) -> tuple[pd.DataFrame, Pat
     return summary, docx
 
 
-def test_python_backend() -> None:
+def test_python_env() -> None:
     if not DEMO_DTA.exists():
         raise SystemExit(f"Missing demo dataset: {DEMO_DTA}")
     shutil.rmtree(OUT, ignore_errors=True)
@@ -252,7 +254,7 @@ def test_python_backend() -> None:
         assert column in set(final["column"]), column
     assert (final_dir / "final_result.md").exists()
     assert python_docx.exists()
-    assert (final_dir / "python_backend_run_note.md").exists()
+    assert (final_dir / "python_env_run_note.md").exists()
     assert (final_dir / "regression_generated.py").exists()
     doc = Document(final_dir / "final_result.docx")
     text = "\n".join(p.text for p in doc.paragraphs)
@@ -278,6 +280,6 @@ def test_stata_python_comparison() -> None:
 
 if __name__ == "__main__":
     test_demo_enumeration_cardinality()
-    test_python_backend()
+    test_python_env()
     test_stata_python_comparison()
     print("OK")

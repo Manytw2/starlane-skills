@@ -1,71 +1,169 @@
 ---
 name: starlane-regression
-description: Use when the user has data and variable mappings and wants to run Starlane's supported regression delivery workflow. Python and Stata are selectable execution backends. If the user does not specify a backend, ask them to choose before running. The workflow first produces a combination summary table, then waits for the user to choose a candidate row, then produces the final regression output and exact source code used. Supports baseline regressions, control-variable/VCE search, supported robustness checks, IV, mediation, moderation, and discrete-group heterogeneity as defined in this skill's references. Do not use for DID, RDD, PSM, SCM, DML, event studies, or methods outside the current contract.
+description: Use when the user wants Starlane's supported regression workflow for economics or management empirical analysis. Supports guided setup from a data file for undergraduate users, or direct execution from complete variable mappings. Python and Stata are selectable envs, not separate workflows. The workflow builds one analysis_plan draft through model-by-model guidance, compiles it to regression arguments, runs a combination summary table, asks for or recommends a candidate row, then produces final regression output and exact source code. Supports baseline regressions, control-variable/VCE search, supported robustness checks, IV, mechanism/mediation checks, moderation, and discrete-group heterogeneity as defined in this skill's references. Do not use for DID, RDD, PSM, SCM, DML, event studies, or methods outside the current contract.
 ---
 
-Run Starlane's first-version two-stage regression delivery workflow.
+Run Starlane's guided regression delivery workflow.
+
+## Target User
+
+The primary user is an undergraduate economics or management student.
+
+They may know basic regression but need help deciding whether to include robustness checks, mechanism checks, moderation, heterogeneity, or IV-style checks.
+
+The agent is a research assistant. It should guide and discuss model choices with the user, then translate confirmed decisions into regression parameters.
 
 ## Read First
 
-Before taking action, read:
+Before taking action, read the relevant references.
 
-- `references/user-data-and-io-contract.md`
-- `references/empirical-section-schema.md`
+Always read:
+
 - `references/supported-methods.md`
-- `references/workflow-contract.md`
+- `references/workflow.md`
+- `references/agent-language-style.md`
+- `references/analysis-plan-schema.md`
+
+When guiding or executing a module, read its module reference:
+
+- baseline: `references/models/baseline.md`
+- robustness: `references/models/robustness.md`
+- mechanism/mediation: `references/models/mechanism.md`
+- moderation: `references/models/moderation.md`
+- heterogeneity: `references/models/heterogeneity.md`
+- IV: `references/models/iv.md`
+
+When discussing Word/table output, read:
+
+- `references/output.md`
+
+When troubleshooting, read:
+
 - `references/troubleshooting.md`
 
 ## Scope
 
-Use this skill only when the user already has data and can provide variable roles.
+Supported workflow:
+
+- data profiling
+- guided model setup
+- one `analysis_plan` draft maintained throughout the conversation
+- compilation to regression arguments
+- summary table generation
+- selected-row final output generation
+
+Unsupported methods remain outside this skill:
+
+- DID
+- event study
+- RDD
+- PSM
+- SCM
+- DML
+- causal forest
+- Bayesian models
+- survival analysis
+- Oaxaca decomposition
+- quantile treatment effects
 
 Do not invent variables, data sources, identification strategies, or unsupported methods.
 
-## Nature
+## Two Entry Modes
 
-This skill is a regression delivery workflow.
+### Guided Setup Mode
 
-Python and Stata are selectable execution backends. They are implementation languages, not separate workflows.
+Use this mode when the user provides only a data file, partial variables, or a research idea.
 
-If the user has not selected a backend, ask them to choose before running.
+Do not ask the user to directly fill regression args.
 
-Do not switch backend mid-workflow unless the user asks.
+Follow `references/workflow.md`:
 
-## Workflow
+1. Profile the data with `uv run python scripts/workflow/profile_data.py ...`.
+2. Explain the inference boundary from `references/agent-language-style.md`.
+3. Initialize one `analysis_plan_draft`.
+4. Confirm each model module and write decisions into that same draft.
+5. Render a human-readable review of the same draft.
+6. Save or state the confirmed plan.
+7. Compile the plan to regression args with `uv run python scripts/workflow/compile_plan_to_regression_args.py ...`.
+8. Continue to the summary/final env workflow.
 
-1. Confirm the request is inside `references/supported-methods.md`.
-2. Collect and validate the required fields in `references/user-data-and-io-contract.md`.
-3. Confirm the execution backend: Python or Stata. If unspecified, ask the user before running.
-4. Run the summary stage with the selected backend.
-5. Deliver `.starlane/combination_summary.csv` and explain how to choose a candidate row.
-6. Ask the user to choose one candidate row from the summary table, unless they explicitly delegated model selection.
-7. Generate the selected backend's final source artifact for the selected row.
-8. Run the generated final source artifact when the backend runtime is available.
-9. Deliver the generated source artifact, Word output, model-selection explanation, limitations, and reproduction notes.
+The review step is not a second planning phase. It is only a readable rendering of the same `analysis_plan_draft`.
 
-## Backends
+### Direct Execution Mode
 
-Supported backends:
+Use this mode when the user has already provided complete variable mappings or a regression-compatible argument list.
 
-- Python: always run project Python scripts through `uv run python ...` and output `.py` source.
-- Stata: use generated or provided `.do` code and output `.do` source.
+Validate the inputs, then run the selected env.
 
-Do not switch backend mid-workflow unless the user asks.
+Even in direct mode, explain important fields in research language when reporting back to the user.
 
-If the selected backend cannot be executed in the local environment, still generate the source artifact when possible and clearly state that execution was not completed.
+## Language Rules
 
-Current backend entrypoints:
+Use research-language labels when speaking with the user.
 
-- Python summary: `uv run python scripts/regression_summary.py ...`
-- Python final source generator: `uv run python scripts/generate_regression_py.py ...`
-- Python generated final runner: `uv run python regression_generated.py`
-- Python generated final runner support: `scripts/regression_final.py`
-- Stata summary: `scripts/regression_summary.do`
-- Stata final source generator: `scripts/generate_regression_do.py`
+Do not say:
 
-Current Python backend scope follows the same section families as the Stata backend: baseline, supported robustness checks, IV, mediation, moderation, discrete heterogeneity, control-variable subset search, VCE enumeration, and selected-row final output. Do not claim numerical parity with Stata `reghdfe`/`ivreghdfe` until cross-backend tests prove it for the relevant section and VCE type.
+```text
+x: Attention 对吗？
+```
 
-Implementation-quality note: the current Python backend is a runnable workflow backend, not the final econometrics-quality backend. Its internal estimator exists to keep the three-stage contract executable. The production Python backend target is `pyfixest`; do not add a second estimation fallback. The Word output only needs to follow Starlane's standard report-table format, not `reg2docx` byte-for-byte layout.
+Say:
+
+```text
+基准回归里，核心解释变量选择 Attention，可以吗？
+```
+
+Do not say:
+
+```text
+meds: Charge|Subsidy|lnCSR 对吗？
+```
+
+Say:
+
+```text
+机制检验里，机制变量选择 Charge、Subsidy、lnCSR，可以吗？
+```
+
+Before suggesting variable roles, say:
+
+```text
+我先根据数据里的列名和基本结构做一个初步判断。因为变量名是你在数据中命名的，我只能从名称、类型、缺失情况和常见经管研究习惯推断变量角色，不能保证理解完全正确；如果某个变量的实际含义和我的推断不一致，以你的解释为准。
+```
+
+Regression field names may appear in reproducibility notes, generated source explanations, and regression args. They should not be the primary wording for user confirmation.
+
+## Analysis Plan
+
+In guided setup mode, maintain one `analysis_plan_draft` grouped by model module:
+
+- `data`
+- `research`
+- `baseline`
+- `robustness`
+- `mechanism`
+- `moderation`
+- `heterogeneity`
+- `iv`
+- `execution`
+
+The final confirmed plan is compiled into regression args consumed by the selected env.
+
+Do not create a separate natural-language plan and then a second structured plan. The structured draft is the source of truth.
+
+## Env
+
+Use the shared workflow rules in `references/workflow.md`.
+
+Supported envs are Python and Stata.
+
+If the user has not selected an env, ask them to choose before running summary/final stages.
+
+Do not switch env mid-workflow unless the user asks.
+
+If the selected env cannot execute locally, still generate the source artifact when possible and clearly state that execution was not completed.
+
+Do not use legacy top-level wrapper paths. New implementation files live under `scripts/workflow/` and `scripts/envs/`.
 
 ## Summary Stage
 
@@ -77,13 +175,19 @@ The summary stage searches supported combinations and writes:
 
 The summary table is an intermediate decision artifact. Do not treat the highest score as automatic final selection.
 
-## Model Selection, Ethics, and Boundaries
+Before large summary runs, estimate and explain the rough workload:
+
+```text
+valid control subsets * 4 VCE choices * model specifications
+```
+
+## Model Selection, Ethics, And Boundaries
 
 Starlane is a reproducible empirical-analysis workflow, not a significance factory.
 
 Scoring in `combination_summary.csv` is a search aid. It helps sort candidate models, but it is not proof that the highest-scoring model is the best research design.
 
-Do not blindly choose the highest score. When recommending or selecting a model, consider:
+When recommending or selecting a model, consider:
 
 - score rank
 - expected coefficient direction
@@ -105,22 +209,25 @@ Agents using this skill must:
 
 ## Final Stage
 
-The final stage uses the user-selected row from `combination_summary.csv`.
+The final stage uses the selected row from `combination_summary.csv`.
 
 It must output:
 
 - exact source code used to produce the result
-- Word regression output produced by running the generated source when the backend runtime is available
-- backend-specific run note or log
+- Word regression output produced by running the generated source when the env runtime is available
+- env-specific run note or log
 - reproducibility note
 
 ## Required Deliverables
 
+- data profile when guided setup mode is used
+- confirmed `analysis_plan` or a clear direct-mode variable mapping
+- compiled regression args or equivalent reproducibility record
 - `.starlane/combination_summary.csv`
 - user-selected candidate row or explicitly delegated model-selection choice
-- exact source code used for final execution (`.py` for Python backend or `.do` for Stata backend)
+- exact source code used for final execution (`.py` for Python env or `.do` for Stata env)
 - Word regression output when the generated source executes successfully
-- backend-specific logs or run notes
+- env-specific logs or run notes
 - short model-selection explanation
 - short reproducibility note
 - limitations and unsupported-causal-language warnings when relevant
