@@ -1,0 +1,5 @@
+.DS_Store
+.starlane*/
+.venv/
+__pycache__/
+*.py[cod]
