@@ -13,7 +13,7 @@ Pruning: Skip robustness/IV/mediation/moderation unless at least one baseline-cv
 
 Performance (oneclick-inspired): No data reload per iteration; rob vars created once; cv subsets in memory; quietly + no est store.
 
-Selection: rows expose cv_idx and vce_idx directly. Pass those values to generate_regression_do.py.
+Selection: rows expose cv_idx and vce_idx directly. Pass those values to scripts/envs/stata/generate_final_source.py.
 
 Args: input_dta y x cv cv_fixed cv_min_count panelvar timevar meds mods heterogeneity_discrete heterogeneity_discrete_values rob_vars y_ln x_ln rob_year_range iv coef_direction [cv_idx_start cv_idx_end probe_only]
 
@@ -45,7 +45,7 @@ Paths default to .starlane/ and .starlane/tmp unless $STARLANE_EXPORT and $STARL
 Output:
   - combination_summary.csv: in $STARLANE_EXPORT or .starlane/
   - Coef cells: {value}{stars} e.g. 0.114***; column names use __ as segment separator
-  - selection_id: plain cv_idx_vce_idx; pass cv_idx and vce_idx to generate_regression_do.py
+  - selection_id: plain cv_idx_vce_idx; pass cv_idx and vce_idx to scripts/envs/stata/generate_final_source.py
   - Intermediates (.score_*.dta, part CSV, .n_valid.txt) under $STARLANE_TMP or .starlane/tmp.
 */
 
@@ -612,7 +612,7 @@ foreach mod_var of global mods {
 		}
 	}
 }
-* Same (y,x) grouped; within each (y,x), all group values adjacent (align with generate_regression_do.py)
+* Same (y,x) grouped; within each (y,x), all group values adjacent (align with Stata final source generator)
 foreach group_var of global heterogeneity_discrete {
 	_load_discrete_values_for_var `"$heterogeneity_discrete_values"' "`group_var'" discrete_vals
 	if `discrete_vals_count' <= 0 {
@@ -927,7 +927,7 @@ forvalues cv_idx = `loop_start'/`loop_end' {
 				}
 			}
 		}
-		* Same (y,x) grouped; within each (y,x), all group values adjacent (align with generate_regression_do.py)
+		* Same (y,x) grouped; within each (y,x), all group values adjacent (align with Stata final source generator)
 		foreach group_var of global heterogeneity_discrete {
 			_load_discrete_values_for_var `"$heterogeneity_discrete_values"' "`group_var'" discrete_vals
 			if `discrete_vals_count' <= 0 {

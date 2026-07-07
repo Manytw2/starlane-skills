@@ -3,7 +3,7 @@
 
 """
 Generate a readable Stata .do file from Starlane regression parameters.
-Use the same 18 args as regression_summary.do, then append cv_idx and vce_idx
+Use the same 18 args as the Stata summary target, then append cv_idx and vce_idx
 from combination_summary.csv. Hidden encoded selection keys are intentionally unsupported.
 """
 
@@ -279,7 +279,7 @@ def parse_args(argv: list[str]) -> tuple[list[str], str | None]:
     array or after positional args.
     """
     if len(argv) < 2:
-        raise ValueError("Usage: generate_regression_do.py <args_json_or_20_positional> [output_path]")
+        raise ValueError("Usage: generate_final_source.py <args_json_or_20_positional> [output_path]")
     first = argv[1]
     output_path: str | None = None
     arr: list

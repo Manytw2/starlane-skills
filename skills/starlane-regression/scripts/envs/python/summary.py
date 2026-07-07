@@ -1,4 +1,4 @@
-"""Python summary backend for Starlane regression.
+"""Python summary env for Starlane regression.
 
 The output contract matches combination_summary.csv.
 """
@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from regression_backend_common import (
+from common import (
     RegressionArgs,
     apply_spec_condition,
     build_specs,
@@ -19,7 +19,7 @@ from regression_backend_common import (
     fail,
     format_coef,
     make_base_sample,
-    prepare_backend_data,
+    prepare_regression_data,
     parse_cli_values,
     read_data,
     run_spec,
@@ -51,7 +51,7 @@ def main() -> int:
         required = [*y_vars, *x_vars, *cv_all, args.panelvar, args.timevar, *optional_originals]
         df = read_data(args.input_dta)
         ensure_columns(df, required)
-        df = prepare_backend_data(df, args)
+        df = prepare_regression_data(df, args)
         df, panelvar = encode_panel_if_needed(df, args.panelvar)
         timevar = args.timevar
 

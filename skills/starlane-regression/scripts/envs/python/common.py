@@ -1,4 +1,4 @@
-"""Shared helpers for the Python regression backend."""
+"""Shared helpers for the Python regression env."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ class RegressionResult:
         t = abs(self.t_stat)
         if not math.isfinite(t):
             return math.nan
-        # Normal approximation. Good enough for backend screening; document if used for publication.
+        # Normal approximation. Good enough for regression screening; document if used for publication.
         return math.erfc(t / math.sqrt(2.0))
 
 
@@ -196,7 +196,7 @@ def ensure_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
         raise ValueError(f"Missing variable(s): {', '.join(missing)}")
 
 
-def prepare_backend_data(df: pd.DataFrame, args: RegressionArgs) -> pd.DataFrame:
+def prepare_regression_data(df: pd.DataFrame, args: RegressionArgs) -> pd.DataFrame:
     out = df.copy()
     rob = parse_rob_vars(args.rob_vars)
     y_vars = split_words(args.y)
@@ -434,7 +434,7 @@ def _within_transform(frame: pd.DataFrame, columns: list[str], panelvar: str, ti
     """Absorb two fixed effects by alternating demeaning.
 
     This avoids expanding thousands of dummy columns. It is a practical Python
-    backend approximation to the fixed-effect absorption used by reghdfe.
+    regression approximation to the fixed-effect absorption used by reghdfe.
     """
     out = frame[columns].astype(float).copy()
     for _ in range(8):
