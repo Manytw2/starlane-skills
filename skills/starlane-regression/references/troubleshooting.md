@@ -39,6 +39,23 @@ Missing packages:
 - `ivreghdfe` missing: run `ssc install ivreghdfe`.
 - `reg2docx` or `sum2docx` missing: install the required Stata export package before running the generated final `.do`.
 
+Stata runtime files:
+
+- Stata batch logs should be under `.starlane/runtime/starlane-regression/runs/<run-id>/logs/`, not the repository root.
+- The generated wrapper `.do` should be under the run's `generated/` directory.
+- `STARLANE_EXPORT` should point to the run's `outputs/` directory.
+- `STARLANE_TMP` should point to the run's `tmp/` directory.
+- Successful runs should clean low-value tmp files such as `.score_*.dta`.
+- Failed runs may keep tmp files and logs for diagnosis.
+
+Runtime maintenance:
+
+- Use `scripts/starlane-regression-runtime-status.sh` to inspect run count, disk usage, latest run, and latest failed run.
+- Use `scripts/clean-starlane-regression-runtime.sh --dry-run` before deleting runtime files.
+- Use `scripts/clean-starlane-regression-runtime.sh --success-tmp --force` to remove tmp files from successful runs.
+- Use `scripts/clean-starlane-regression-runtime.sh --keep-last 5 --force` to prune old run directories.
+- Runtime cleanup must not delete `output/starlane-regression/`.
+
 ## Summary-Final Selection Issues
 
 If summary generation succeeds but final generation fails, check that:

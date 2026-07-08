@@ -328,15 +328,35 @@ Dynamic coefficient columns are defined by the section schemas in `references/mo
 
 Final source generation consumes the compiled regression args plus `cv_idx` and `vce_idx`.
 
-## Default Output Directory
+## Output And Runtime Directories
 
-By default, the skill writes:
+User-facing outputs should be published to:
 
 ```text
-.starlane/
+output/starlane-regression/
 ├── combination_summary.csv
-└── tmp/
+├── final_result.docx
+├── final_source.do
+└── run_note.md
 ```
+
+Internal run evidence should be written under the ignored runtime directory:
+
+```text
+.starlane/runtime/starlane-regression/runs/<run-id>/
+├── inputs/
+├── generated/
+├── logs/
+├── outputs/
+├── tmp/
+└── run.json
+```
+
+Env scripts do not manage the full runtime lifecycle. They should write outputs
+to `STARLANE_EXPORT` and temporary files to `STARLANE_TMP`. The outer runner is
+responsible for creating the run directory, setting those paths, collecting
+logs, publishing user-facing outputs, updating `run.json`, and cleaning `tmp/`
+after successful runs.
 
 Stata env can override these paths by setting globals before running `scripts/envs/stata/summary.do`:
 

@@ -15,11 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 QUICK_START = Path(__file__).resolve().parent
 SCRIPTS = ROOT / "skills" / "starlane-regression" / "scripts"
+WORKFLOW_SCRIPTS = SCRIPTS / "workflow"
 PYTHON_ENV_SCRIPTS = SCRIPTS / "envs" / "python"
 STATA_ENV_SCRIPTS = SCRIPTS / "envs" / "stata"
 DEMO_DTA = QUICK_START / "demo.dta"
-OUT = QUICK_START / "output"
 UV_PYTHON = ["uv", "run", "python"]
+
+sys.path.insert(0, str(WORKFLOW_SCRIPTS))
+from runtime import RunContext, clean_success_tmp, create_run_context, mark_failed, mark_success, publish_outputs  # noqa: E402
 
 SUMMARY_ARGS = [
     str(DEMO_DTA),
@@ -114,42 +117,61 @@ def print_outputs(env_name: str, paths: list[tuple[str, Path]]) -> None:
 
 
 def run_python_env() -> None:
-    out_dir = OUT / "python"
-    final_dir = out_dir / "final"
-    env = {**os.environ, "STARLANE_EXPORT": str(out_dir), "STARLANE_TMP": str(out_dir / "tmp")}
+    context = create_run_context(ROOT, "python", "demo")
+    env = {**os.environ, **context.env_vars()}
+    context.write_input_json("regression_args.json", SUMMARY_ARGS)
 
-    print("\nRunning Python env summary...")
-    run([*UV_PYTHON, str(PYTHON_ENV_SCRIPTS / "summary.py"), json.dumps(SUMMARY_ARGS, ensure_ascii=False)], env=env)
+    try:
+        print("\nRunning Python env summary...")
+        run([*UV_PYTHON, str(PYTHON_ENV_SCRIPTS / "summary.py"), json.dumps(SUMMARY_ARGS, ensure_ascii=False)], env=env)
 
-    summary_path = out_dir / "combination_summary.csv"
-    first = first_summary_row(summary_path)
-    final_args = [*SUMMARY_ARGS[:18], str(int(first["cv_idx"])), str(int(first["vce_idx"])), str(final_dir)]
-    generated_source = final_dir / "regression_generated.py"
+        summary_path = context.outputs_dir / "combination_summary.csv"
+        first = first_summary_row(summary_path)
+        final_args = [*SUMMARY_ARGS[:18], str(int(first["cv_idx"])), str(int(first["vce_idx"])), str(context.outputs_dir)]
+        context.write_input_json("final_args.json", final_args)
+        generated_source = context.generated_dir / "regression_generated.py"
 
-    print("\nGenerating Python env final source...")
-    run(
-        [
-            *UV_PYTHON,
-            str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
-            json.dumps(final_args, ensure_ascii=False),
-            str(generated_source),
-        ],
-        env=env,
-    )
+        print("\nGenerating Python env final source...")
+        run(
+            [
+                *UV_PYTHON,
+                str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
+                json.dumps(final_args, ensure_ascii=False),
+                str(generated_source),
+            ],
+            env=env,
+        )
 
-    print("\nRunning Python env final source...")
-    run([*UV_PYTHON, str(generated_source)], env=env)
+        print("\nRunning Python env final source...")
+        run([*UV_PYTHON, str(generated_source)], env=env)
 
-    print_outputs(
-        "Python",
-        [
-            ("summary CSV", summary_path),
-            ("generated source", generated_source),
-            ("result CSV", final_dir / "final_result.csv"),
-            ("Markdown report", final_dir / "final_result.md"),
-            ("Word report", final_dir / "final_result.docx"),
-        ],
-    )
+        published = publish_outputs(
+            context,
+            [
+                (summary_path, "combination_summary.csv"),
+                (generated_source, "regression_generated.py"),
+                (context.outputs_dir / "final_result.csv", "final_result.csv"),
+                (context.outputs_dir / "final_result.md", "final_result.md"),
+                (context.outputs_dir / "final_result.docx", "final_result.docx"),
+                (context.outputs_dir / "python_env_run_note.md", "python_env_run_note.md"),
+            ],
+        )
+        clean_success_tmp(context)
+        mark_success(context, published)
+
+        print_outputs(
+            "Python",
+            [
+                ("summary CSV", context.public_output_dir / "combination_summary.csv"),
+                ("generated source", context.public_output_dir / "regression_generated.py"),
+                ("result CSV", context.public_output_dir / "final_result.csv"),
+                ("Markdown report", context.public_output_dir / "final_result.md"),
+                ("Word report", context.public_output_dir / "final_result.docx"),
+            ],
+        )
+    except Exception as exc:
+        mark_failed(context, str(exc))
+        raise
 
 
 def write_stata_summary_runner(path: Path, export_dir: Path, tmp_dir: Path) -> None:
@@ -189,48 +211,60 @@ def run_stata_env() -> None:
             "Install Stata or set STARLANE_STATA_BIN to the Stata executable path."
         )
 
-    out_dir = OUT / "stata"
-    tmp_dir = out_dir / "tmp"
-    final_dir = out_dir / "final"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    final_dir.mkdir(parents=True, exist_ok=True)
+    context = create_run_context(ROOT, "stata", "demo")
+    context.write_input_json("regression_args.json", SUMMARY_ARGS)
 
-    print("\nRunning Stata env summary...")
-    runner = out_dir / "run_stata_summary.do"
-    write_stata_summary_runner(runner, out_dir, tmp_dir)
-    run_stata_batch(stata_bin, runner, out_dir)
+    try:
+        print("\nRunning Stata env summary...")
+        runner = context.generated_dir / "run_stata_summary.do"
+        write_stata_summary_runner(runner, context.outputs_dir, context.tmp_dir)
+        run_stata_batch(stata_bin, runner, context.logs_dir)
 
-    summary_path = summary_chunk_path(out_dir)
-    canonical_summary_path = out_dir / "combination_summary.csv"
-    if summary_path != canonical_summary_path and summary_path.exists():
-        shutil.copyfile(summary_path, canonical_summary_path)
+        summary_path = summary_chunk_path(context.outputs_dir)
+        canonical_summary_path = context.outputs_dir / "combination_summary.csv"
+        if summary_path != canonical_summary_path and summary_path.exists():
+            shutil.copyfile(summary_path, canonical_summary_path)
 
-    first = first_summary_row(canonical_summary_path)
-    final_args = [*SUMMARY_ARGS[:18], str(int(first["cv_idx"])), str(int(first["vce_idx"])), str(final_dir)]
-    generated_source = final_dir / "regression_generated.do"
+        first = first_summary_row(canonical_summary_path)
+        final_args = [*SUMMARY_ARGS[:18], str(int(first["cv_idx"])), str(int(first["vce_idx"])), str(context.outputs_dir)]
+        context.write_input_json("final_args.json", final_args)
+        generated_source = context.generated_dir / "regression_generated.do"
 
-    print("\nGenerating Stata env final source...")
-    run(
-        [
-            *UV_PYTHON,
-            str(STATA_ENV_SCRIPTS / "generate_final_source.py"),
-            json.dumps(final_args, ensure_ascii=False),
-            str(generated_source),
-        ]
-    )
+        print("\nGenerating Stata env final source...")
+        run(
+            [
+                *UV_PYTHON,
+                str(STATA_ENV_SCRIPTS / "generate_final_source.py"),
+                json.dumps(final_args, ensure_ascii=False),
+                str(generated_source),
+            ]
+        )
 
-    print("\nRunning Stata env final source...")
-    run_stata_batch(stata_bin, generated_source, final_dir)
+        print("\nRunning Stata env final source...")
+        run_stata_batch(stata_bin, generated_source, context.logs_dir)
 
-    print_outputs(
-        "Stata",
-        [
-            ("summary CSV", canonical_summary_path),
-            ("generated source", generated_source),
-            ("Word report", final_dir / "starlane-regression-results.docx"),
-        ],
-    )
+        published = publish_outputs(
+            context,
+            [
+                (canonical_summary_path, "combination_summary.csv"),
+                (generated_source, "regression_generated.do"),
+                (context.outputs_dir / "starlane-regression-results.docx", "starlane-regression-results.docx"),
+            ],
+        )
+        clean_success_tmp(context)
+        mark_success(context, published)
+
+        print_outputs(
+            "Stata",
+            [
+                ("summary CSV", context.public_output_dir / "combination_summary.csv"),
+                ("generated source", context.public_output_dir / "regression_generated.do"),
+                ("Word report", context.public_output_dir / "starlane-regression-results.docx"),
+            ],
+        )
+    except Exception as exc:
+        mark_failed(context, str(exc))
+        raise
 
 
 def main() -> int:
@@ -238,14 +272,12 @@ def main() -> int:
     if not DEMO_DTA.exists():
         raise SystemExit(f"Demo dataset not found: {DEMO_DTA}")
 
-    OUT.mkdir(parents=True, exist_ok=True)
-
     if args.env in ("python", "both"):
         run_python_env()
     if args.env in ("stata", "both"):
         run_stata_env()
 
-    print(f"\nQuick start complete. Output root: {OUT.relative_to(ROOT)}")
+    print("\nQuick start complete. Output root: output/starlane-regression")
     return 0
 
 
