@@ -49,6 +49,19 @@ npx skills@latest add Manytw2/starlane-skills
 
 你可以从一份数据文件和一个研究想法开始，也可以直接提供已经整理好的变量映射。Agent 会先和你确认研究设定，再把确认后的计划编译成可执行的回归任务。
 
+如果你只是想先看这个仓库会跑出什么，可以使用内置 demo：
+
+```bash
+uv sync
+uv run python quick-start/run_demo.py --env python
+```
+
+也可以选择 Stata env：
+
+```bash
+uv run python quick-start/run_demo.py --env stata
+```
+
 ## 开发者安装
 
 ```bash

@@ -51,6 +51,19 @@ Then invoke the skill in an Agent environment that supports Skills:
 
 You can start from a data file and a rough research idea, or provide complete variable mappings directly. The Agent confirms the research setup before compiling it into executable regression arguments.
 
+To see what the repository produces without bringing your own data, run the built-in demo:
+
+```bash
+uv sync
+uv run python quick-start/run_demo.py --env python
+```
+
+You can also run the Stata env:
+
+```bash
+uv run python quick-start/run_demo.py --env stata
+```
+
 ## Developer Setup
 
 ```bash

@@ -1,0 +1,2556 @@
+
+  ___  ____  ____  ____  ____ ®
+ /__    /   ____/   /   ____/      18.0
+___/   /   /___/   /   /___/       MP—Parallel Edition
+
+ Statistics and Data Science       Copyright 1985-2023 StataCorp LLC
+                                   StataCorp
+                                   4905 Lakeway Drive
+                                   College Station, Texas 77845 USA
+                                   800-STATA-PC        https://www.stata.com
+                                   979-696-4600        stata@stata.com
+
+Stata license: Single-user 2-core  perpetual
+Serial number: 501806366048
+  Licensed to: DayDream
+               DayDream
+
+Notes:
+      1. Stata is running in batch mode.
+      2. Unicode is supported; see help unicode_advice.
+      3. More than 2 billion observations are allowed; see help obs_advice.
+      4. Maximum number of variables is set to 5,000 but can be increased;
+          see help set_maxvar.
+
+. do .starlane/run_stata_summary_demo.do 
+
+. version 17.0
+
+. clear all
+
+. set more off
+
+. 
+. cd "/Users/daydream/dev/starlane-skills"
+/Users/daydream/dev/starlane-skills
+
+. global STARLANE_EXPORT ".starlane"
+
+. global STARLANE_TMP ".starlane/tmp"
+
+. 
+. do "skills/starlane-regression/scripts/envs/stata/summary.do" ///
+>   "/Users/daydream/Desktop/demo.dta" ///
+>   "lnApplyG lnGrantG" ///
+>   "Attention" ///
+>   "Scale Lev lnAge Tange Cash ROA SOE Top1 Inst" ///
+>   "" ///
+>   "0" ///
+>   "id" ///
+>   "year" ///
+>   "Charge|Subsidy|lnCSR|lnEPI" ///
+>   "OverSea|lnMediaPos|lnMediaNeg" ///
+>   "" ///
+>   "" ///
+>   "alt_y:lnAGreenInv lnGGreenInv|alt_x:lnAttention|lag:1" ///
+>   "0" ///
+>   "0" ///
+>   "" ///
+>   "" ///
+>   "positive"
+
+. version 17.0
+
+. clear all
+
+. set more off
+
+. 
+. /*
+> Regression Summary - Exhaustive cv x vce run, scoring, combination summary ta
+> ble. No Word export.
+> 
+> Exhaustive dimensions:
+>   1. cv_subset: from all CVs, select subsets (fixed vars required, min_count 
+> constraint)
+>   2. vce_type: ols, robust, cluster1, cluster2
+> 
+> Pruning: Skip robustness/IV/mediation/moderation unless at least one baseline
+> -cv has p<0.1 AND correct coef direction (per coef_direction).
+> 
+> Performance (oneclick-inspired): No data reload per iteration; rob vars creat
+> ed once; cv subsets in memory; quietly + no est store.
+> 
+> Selection: rows expose cv_idx and vce_idx directly. Pass those values to scri
+> pts/envs/stata/generate_final_source.py.
+> 
+> Args: input_dta y x cv cv_fixed cv_min_count panelvar timevar meds mods heter
+> ogeneity_discrete heterogeneity_discrete_values rob_vars y_ln x_ln rob_year_r
+> ange iv coef_direction [cv_idx_start cv_idx_end probe_only]
+> 
+> Parameters:
+>   1.  input_dta   - Input data path (.dta, .xlsx, .xls, or .csv; first row as
+>  headers for non-dta)
+>   2.  y           - Dependent variable(s), space-separated
+>   3.  x           - Core independent variable(s), space-separated
+>   4.  cv          - All control variables, space-separated
+>   5.  cv_fixed    - Fixed CVs always included (subset of cv), space-separated
+> . Empty = none fixed
+>   6.  cv_min_count- Minimum number of CVs (default 0)
+>   7.  panelvar    - Panel entity variable (= cluster_var for VCE)
+>   8.  timevar     - Time variable (= cluster_var2 for VCE)
+>   9.  meds        - Mediation variables, pipe-separated
+>   10. mods        - Moderation variables, pipe-separated
+>   11. heterogeneity_discrete - Discrete heterogeneity variables, pipe-separat
+> ed
+>   12. heterogeneity_discrete_values - Flat encoded string: selected discrete 
+> values by variable
+>   13. rob_vars    - Robustness variables
+>   14. y_ln        - do ln(y) robustness? "1"/"是"/"" (default) = yes; "0"/"否
+> " = skip
+>   15. x_ln        - do ln(x) robustness? "1"/"是"/"" (default) = yes; "0"/"否
+> " = skip
+>   16. rob_year_range - Sample period "year_left:year_right" (left<right), emp
+> ty = skip
+>   17. iv          - Instrumental variable(s)
+>   18. coef_direction - "positive" or "negative"; used for pruning (requires b
+> oth p<0.1 and correct sign to continue)
+>   19. cv_idx_start   - (optional) Start cv index for parallel chunk. Used by 
+> orchestrator.
+>   20. cv_idx_end     - (optional) End cv index inclusive. Used by orchestrato
+> r.
+>   21. probe_only     - (optional) "1" = compute n_valid, write to .n_valid.tx
+> t, exit. Used by orchestrator.
+> 
+> Paths default to .starlane/ and .starlane/tmp unless $STARLANE_EXPORT and $ST
+> ARLANE_TMP are set.
+> 
+> Output:
+>   - combination_summary.csv: in $STARLANE_EXPORT or .starlane/
+>   - Coef cells: {value}{stars} e.g. 0.114***; column names use __ as segment 
+> separator
+>   - selection_id: plain cv_idx_vce_idx; pass cv_idx and vce_idx to scripts/en
+> vs/stata/generate_final_source.py
+>   - Intermediates (.score_*.dta, part CSV, .n_valid.txt) under $STARLANE_TMP 
+> or .starlane/tmp.
+> */
+. 
+. args input_arg y_arg x_arg cv_arg cv_fixed_arg cv_min_count_arg panelvar_arg 
+> timevar_arg meds_arg mods_arg het_disc_arg het_disc_vals_arg rob_vars_arg y_l
+> n_arg x_ln_arg rob_year_range_arg iv_arg coef_direction_arg cv_idx_start_arg 
+> cv_idx_end_arg probe_only_arg csv_timestamp_arg
+
+. 
+. // Validate required parameters
+. if "`input_arg'" == "" | "`y_arg'" == "" | "`x_arg'" == "" | "`cv_arg'" == ""
+>  | "`panelvar_arg'" == "" | "`timevar_arg'" == "" {
+.         di as error "Usage: do regression_summary.do input.dta ""y1 y2"" ""x"
+> " ""cv1 cv2"" """" 1 ""id"" ""year"" ..."
+.         exit 198
+. }
+
+. 
+. // cluster_var = panelvar, cluster_var2 = timevar per user-data-spec
+. local panelvar_name = trim("`panelvar_arg'")
+
+. local cluster_var "`panelvar_name'"
+
+. local cluster_var2 = trim("`timevar_arg'")
+
+. 
+. capture confirm file "`input_arg'"
+
+. if _rc {
+.         di as error "Input file not found: `input_arg'"
+.         exit 601
+. }
+
+. 
+. // Load data: .dta, .xlsx, .xls, or .csv (first row as headers for non-dta)
+. local input_ext = lower(substr("`input_arg'", -4, .))
+
+. local input_ext5 = lower(substr("`input_arg'", -5, .))
+
+. if "`input_ext'" == ".dta" {
+.         use "`input_arg'", clear
+. }
+
+. else if "`input_ext'" == ".csv" {
+.         import delimited "`input_arg'", clear varnames(1) case(preserve)
+. }
+
+. else if "`input_ext'" == ".xls" | "`input_ext5'" == ".xlsx" {
+.         import excel "`input_arg'", firstrow clear case(preserve)
+. }
+
+. else {
+.         di as error "Unsupported input format: `input_arg'"
+.         di as error "Supported formats: .dta, .xlsx, .xls, .csv"
+.         exit 198
+. }
+
+. 
+. capture confirm variable `panelvar_name'
+
+. if _rc {
+.         di as error "Panel entity variable not found: `panelvar_name'"
+.         exit 111
+. }
+
+. 
+. capture confirm string variable `panelvar_name'
+
+. if _rc == 0 {
+.         tempvar __simen_panel_probe
+.         capture gen double `__simen_panel_probe' = real(trim(`panelvar_name')
+> )
+.         local panelvar_needs_group 0
+. 
+.         if _rc != 0 {
+.                 local panelvar_needs_group 1
+.         }
+.         else {
+.                 capture count if trim(`panelvar_name') != "" & missing(`__sim
+> en_panel_probe')
+.                 if _rc != 0 {
+.                         local panelvar_needs_group 1
+.                 }
+.                 else if r(N) > 0 {
+.                         local panelvar_needs_group 1
+.                 }
+.         }
+. 
+.         if `panelvar_needs_group' == 0 {
+.                 capture destring `panelvar_name', replace
+.                 if _rc == 0 {
+.                         di "STARLANE_PANELVAR_NUMERIC: `panelvar_name'"
+.                 }
+.         }
+.         else {
+.                 local base = substr("`panelvar_name'", 1, 20)
+.                 local target = "`base'_gid"
+.                 capture confirm new variable `target'
+.                 local suffix_idx = 0
+.                 while _rc != 0 {
+  2.                         local suffix_idx = `suffix_idx' + 1
+  3.                         local target = "`base'_g`suffix_idx'"
+  4.                         capture confirm new variable `target'
+  5.                 }
+.                 egen long `target' = group(`panelvar_name')
+.                 di "STARLANE_PANELVAR_GROUP: `panelvar_name' -> `target'"
+.                 local panelvar_name "`target'"
+.                 local cluster_var "`target'"
+.         }
+. 
+.         capture drop `__simen_panel_probe'
+. }
+
+. 
+. global y "`y_arg'"
+
+. global x "`x_arg'"
+
+. global cv_all "`cv_arg'"
+
+. global panelvar "`panelvar_name'"
+
+. global timevar "`timevar_arg'"
+
+. global cluster_var "`cluster_var'"
+
+. global cluster_var2 "`cluster_var2'"
+
+. 
+. if "$STARLANE_EXPORT" == "" {
+.         global STARLANE_EXPORT ".starlane"
+. }
+
+. if "$STARLANE_TMP" == "" {
+.         global STARLANE_TMP ".starlane/tmp"
+. }
+
+. global export_dir "$STARLANE_EXPORT"
+
+. global temp_dir "$STARLANE_TMP"
+
+. * Stata mkdir does not create parent dirs; create export_dir and temp_dir hie
+> rarchy for robustness
+. capture mkdir "$export_dir"
+
+. local temp_dir_parent = substr("$temp_dir", 1, strrpos("$temp_dir", "/") - 1)
+
+. if "`temp_dir_parent'" != "" {
+.         capture mkdir "`temp_dir_parent'"
+. }
+
+. capture mkdir "$temp_dir"
+
+. 
+. local coef_direction = trim(lower("`coef_direction_arg'"))
+
+. if "`coef_direction'" == "" {
+.         local coef_direction "positive"
+. }
+
+. if !inlist("`coef_direction'", "positive", "negative") {
+.         di as error "coef_direction must be 'positive' or 'negative'"
+.         exit 198
+. }
+
+. global coef_direction "`coef_direction'"
+
+. 
+. local cv_fixed = trim("`cv_fixed_arg'")
+
+. local cv_min_count = trim("`cv_min_count_arg'")
+
+. if "`cv_min_count'" == "" {
+.         local cv_min_count 0
+. }
+
+. global cv_fixed "`cv_fixed'"
+
+. global cv_min_count `cv_min_count'
+
+. 
+. // Parse meds, mods, heterogeneity_discrete, heterogeneity_discrete_values, r
+> ob_vars, iv
+. global meds ""
+
+. local meds_raw = trim("`meds_arg'")
+
+. if "`meds_raw'" != "" {
+.         local meds_parsed = subinstr("`meds_raw'", "|", " ", .)
+.         global meds "`meds_parsed'"
+. }
+
+. 
+. global mods ""
+
+. local mods_raw = trim("`mods_arg'")
+
+. if "`mods_raw'" != "" {
+.         local mods_parsed = subinstr("`mods_raw'", "|", " ", .)
+.         global mods "`mods_parsed'"
+. }
+
+. 
+. global heterogeneity_discrete ""
+
+. local heterogeneity_discrete_raw = trim("`het_disc_arg'")
+
+. if "`heterogeneity_discrete_raw'" != "" {
+.         local heterogeneity_discrete_parsed = subinstr("`heterogeneity_discre
+> te_raw'", "|", " ", .)
+.         global heterogeneity_discrete "`heterogeneity_discrete_parsed'"
+.         // Validate: heterogeneity_discrete must be variable names (e.g. SOE|
+> Region), not parameter names
+.         foreach _v of global heterogeneity_discrete {
+  2.                 if regexm(`"`_v'"', "^_") | regexm(`"`_v'"', "_arg$") {
+  3.                         di as error "Invalid heterogeneity_discrete: `_v'.
+>  Pass variable names (e.g. SOE|Region), not parameter names. Pos 11 = vars, p
+> os 12 = values (e.g. SOE:1;0)."
+  4.                         exit 198
+  5.                 }
+  6.         }
+. }
+
+. 
+. global heterogeneity_discrete_values "`het_disc_vals_arg'"
+
+. if regexm(`"$heterogeneity_discrete_values"', "^_[a-z_]+_arg$") {
+.         di as error "Invalid heterogeneity_discrete_values: pass values (e.g.
+>  SOE:1;0|Region:East;West), not param names."
+.         exit 198
+. }
+
+. 
+. global rob_ln_y ""
+
+. global rob_alt_x ""
+
+. global rob_ln_x ""
+
+. global rob_alt_y ""
+
+. global rob_lag_periods ""
+
+. 
+. local rob_raw = trim("`rob_vars_arg'")
+
+. if "`rob_raw'" != "" {
+.         local rob_rest "`rob_raw'"
+.         while "`rob_rest'" != "" {
+  2.                 local pipe_pos = strpos("`rob_rest'", "|")
+  3.                 if `pipe_pos' == 0 {
+  4.                         local rob_item "`rob_rest'"
+  5.                         local rob_rest ""
+  6.                 }
+  7.                 else {
+  8.                         local rob_item = substr("`rob_rest'", 1, `pipe_pos
+> ' - 1)
+  9.                         local rob_rest = substr("`rob_rest'", `pipe_pos' +
+>  1, .)
+ 10.                 }
+ 11.                 local colon_pos = strpos("`rob_item'", ":")
+ 12.                 if `colon_pos' > 0 {
+ 13.                         local rob_type = substr("`rob_item'", 1, `colon_po
+> s' - 1)
+ 14.                         local rob_value = substr("`rob_item'", `colon_pos'
+>  + 1, .)
+ 15.                         if "`rob_type'" == "ln_y" global rob_ln_y "`rob_va
+> lue'"
+ 16.                         if "`rob_type'" == "alt_x" global rob_alt_x "`rob_
+> value'"
+ 17.                         if "`rob_type'" == "ln_x" global rob_ln_x "`rob_va
+> lue'"
+ 18.                         if "`rob_type'" == "alt_y" global rob_alt_y "`rob_
+> value'"
+ 19.                         if "`rob_type'" == "lag" global rob_lag_periods "`
+> rob_value'"
+ 20.                 }
+ 21.         }
+. }
+
+. 
+. // y_ln, x_ln: "1"/"是"/"" = do ln robustness (default); "0"/"否" = skip
+. local y_ln_val = trim(lower("`y_ln_arg'"))
+
+. local x_ln_val = trim(lower("`x_ln_arg'"))
+
+. local y_ln_auto 0
+
+. local x_ln_auto 0
+
+. if inlist("`y_ln_val'", "", "1", "是", "true", "yes") {
+.         local y_ln_auto 1
+. }
+
+. if inlist("`x_ln_val'", "", "1", "是", "true", "yes") {
+.         local x_ln_auto 1
+. }
+
+. global y_ln_auto `y_ln_auto'
+
+. global x_ln_auto `x_ln_auto'
+
+. 
+. // rob_year_range: "year_left:year_right" (left < right). Empty = skip.
+. // Time window is the retained subsample-style robustness form in the current
+>  standard chain.
+. local rob_yr = trim("`rob_year_range_arg'")
+
+. global rob_year_range_cond ""
+
+. if "`rob_yr'" != "" {
+.         local colon_pos = strpos("`rob_yr'", ":")
+.         if `colon_pos' > 0 {
+.                 local yr_left = trim(substr("`rob_yr'", 1, `colon_pos' - 1))
+.                 local yr_right = trim(substr("`rob_yr'", `colon_pos' + 1, .))
+.                 if "`yr_left'" != "" & "`yr_right'" != "" {
+.                         global rob_year_range_cond "${timevar}>=`yr_left' & $
+> {timevar}<=`yr_right'"
+.                 }
+.         }
+. }
+
+. 
+. global iv ""
+
+. local iv_raw = trim("`iv_arg'")
+
+. if "`iv_raw'" != "" {
+.         global iv "`iv_raw'"
+. }
+
+. 
+. // Build cv_optional = cv_all - cv_fixed
+. local cv_optional ""
+
+. foreach v of global cv_all {
+  2.         local in_fixed 0
+  3.         foreach f of global cv_fixed {
+  4.                 if "`v'" == "`f'" {
+  5.                         local in_fixed 1
+  6.                         continue
+  7.                 }
+  8.         }
+  9.         if !`in_fixed' {
+ 10.                 local cv_optional "`cv_optional' `v'"
+ 11.         }
+ 12. }
+
+. global cv_optional `cv_optional'
+
+. 
+. local n_fixed : word count $cv_fixed
+
+. local n_opt : word count $cv_optional
+
+. local min_extra = max(0, `cv_min_count' - `n_fixed')
+
+. 
+. // Generate valid cv subsets in memory (no file I/O; use locals for fast acce
+> ss)
+. local n_valid 0
+
+. local max_i = 2^`n_opt' - 1
+
+. if `n_opt' == 0 {
+.         local max_i 0
+. }
+
+. forvalues i = 0/`max_i' {
+  2.         local c 0
+  3.         if `n_opt' > 0 {
+  4.                 forvalues j = 1/`n_opt' {
+  5.                         local pow = 2^(`j'-1)
+  6.                         if mod(int(`i'/`pow'), 2) {
+  7.                                 local c = `c' + 1
+  8.                         }
+  9.                 }
+ 10.         }
+ 11.         if `c' >= `min_extra' {
+ 12.                 local subs "$cv_fixed"
+ 13.                 if `n_opt' > 0 {
+ 14.                         forvalues j = 1/`n_opt' {
+ 15.                                 local pow = 2^(`j'-1)
+ 16.                                 if mod(int(`i'/`pow'), 2) {
+ 17.                                         local w "`=word("$cv_optional", `j
+> ')'"
+ 18.                                         local subs "`subs' `w'"
+ 19.                                 }
+ 20.                         }
+ 21.                 }
+ 22.                 local cv_sub_`n_valid' "`subs'"
+ 23.                 local n_valid = `n_valid' + 1
+ 24.         }
+ 25. }
+
+. 
+. if `n_valid' == 0 {
+.         di as error "No valid cv subsets. Check cv_fixed and cv_min_count."
+.         exit 198
+. }
+
+. 
+. // Probe-only mode: write n_valid and exit (used by parallel orchestrator)
+. if "$STARLANE_CACHE_DTA" == "" {
+.         global STARLANE_CACHE_DTA "$temp_dir/.input_data.dta"
+. }
+
+. local starlane_cache_dta "$STARLANE_CACHE_DTA"
+
+. local probe_only = trim(lower("`probe_only_arg'"))
+
+. if inlist("`probe_only'", "1", "yes", "true") {
+.         // Save xlsx/xls to .dta for workers (import excel is 10-100x slower 
+> than use; avoid N workers each loading xlsx)
+.         if "`input_ext'" == ".xls" | "`input_ext5'" == ".xlsx" {
+.                 save "`starlane_cache_dta'", replace
+.         }
+.         file open probe_fh using "$temp_dir/.n_valid.txt", write replace
+.         file write probe_fh "`n_valid'"
+.         file close probe_fh
+.         exit 0
+. }
+
+. 
+. // Parse cv range for parallel chunk (optional)
+. local cv_start ""
+
+. local cv_end ""
+
+. local use_range 0
+
+. if "`cv_idx_start_arg'" != "" & "`cv_idx_end_arg'" != "" {
+.         local cv_start = real(trim("`cv_idx_start_arg'"))
+.         local cv_end = real(trim("`cv_idx_end_arg'"))
+.         if !missing(`cv_start') & !missing(`cv_end') & `cv_start' >= 0 & `cv_
+> end' < `n_valid' & `cv_start' <= `cv_end' {
+.                 local use_range 1
+.         }
+. }
+
+. 
+. // Sample logic aligned with the final-stage generator:
+. // Per cv_subset: sample_pool_vars (with current cv), __base_raw_ok, reghdfe 
+> y x cv if __base_raw_ok, __base_sample = e(sample).
+. // All regressions use if __base_sample. Sample setup done inside cv loop.
+. tsset $panelvar $timevar
+
+Panel variable: id (unbalanced)
+ Time variable: year, 2010 to 2021, but with gaps
+         Delta: 1 unit
+
+. 
+. // Create rob vars once (like oneclick: no reload per iteration)
+. // Per user-data-spec: when y_ln=是 or x_ln=是, do ln(y)/ln(x) robustness; wh
+> en 否, skip
+. capture drop _rob_ln_*
+
+. local rob_ln_y_use ""
+
+. if $y_ln_auto {
+.         local rob_ln_y_use "$rob_ln_y"
+.         foreach y of global y {
+  2.                 capture confirm numeric variable `y'
+  3.                 if _rc == 0 {
+  4.                         capture gen double _rob_ln_`y' = ln(`y') if `y' > 
+> 0 & !missing(`y')
+  5.                         if _rc == 0 {
+  6.                                 local rob_ln_y_use "`rob_ln_y_use' _rob_ln
+> _`y'"
+  7.                         }
+  8.                 }
+  9.         }
+. }
+
+. local rob_ln_x_use ""
+
+. if $x_ln_auto {
+.         local rob_ln_x_use "$rob_ln_x"
+.         foreach x of global x {
+  2.                 capture confirm numeric variable `x'
+  3.                 if _rc == 0 {
+  4.                         capture gen double _rob_ln_`x' = ln(`x') if `x' > 
+> 0 & !missing(`x')
+  5.                         if _rc == 0 {
+  6.                                 local rob_ln_x_use "`rob_ln_x_use' _rob_ln
+> _`x'"
+  7.                         }
+  8.                 }
+  9.         }
+. }
+
+. 
+. // Create moderation std vars once (they do not depend on cv or vce)
+. if "$mods" != "" {
+.         capture drop std_x_* std_mod_*
+.         foreach x of global x {
+  2.                 quietly egen std_x_`x' = std(`x')
+  3.         }
+.         foreach mod_var of global mods {
+  2.                 quietly egen std_mod_`mod_var' = std(`mod_var')
+  3.         }
+. }
+
+. 
+. capture program drop _calc_effective_stars
+
+. program define _calc_effective_stars
+  1.         args coef se
+  2.         local effective_stars 0
+  3.         if !missing(`coef') & !missing(`se') & `se' > 0 {
+  4.                 local dir_ok 0
+  5.                 if ("$coef_direction" == "positive" & `coef' > 0) | ("$coe
+> f_direction" == "negative" & `coef' < 0) {
+  6.                         local dir_ok 1
+  7.                 }
+  8.                 if `dir_ok' {
+  9.                         capture local df = e(df_r)
+ 10.                         if _rc != 0 | missing(`df') {
+ 11.                                 capture local df = e(N) - e(df_m) - 1
+ 12.                         }
+ 13.                         if missing(`df') | `df' <= 0 {
+ 14.                                 local df 999999
+ 15.                         }
+ 16.                         local t = `coef' / `se'
+ 17.                         local pval = 2 * ttail(`df', abs(`t'))
+ 18.                         local effective_stars = cond(`pval' < 0.01, 3, con
+> d(`pval' < 0.05, 2, cond(`pval' < 0.1, 1, 0)))
+ 19.                 }
+ 20.         }
+ 21.         c_local effective_stars `effective_stars'
+ 22. end
+
+. 
+. capture program drop _post_coef
+
+. program define _post_coef
+  1.         args scorehandle vce_suffix section target_var
+  2.         local coef = _b[`target_var']
+  3.         local se   = _se[`target_var']
+  4.         local dep  = "`e(depvar)'"
+  5.         _calc_effective_stars `coef' `se'
+  6.         post `scorehandle' ("`vce_suffix'") ("`section'") ("`dep'") ("`tar
+> get_var'") (`coef') (`se') (`effective_stars')
+  7. end
+
+. 
+. capture program drop _urldecode
+
+. program define _urldecode
+  1.         args raw_input
+  2.         local in `"`raw_input'"'
+  3.         local out ""
+  4.         local in_len = length(`"`in'"')
+  5.         local i 1
+  6.         while `i' <= `in_len' {
+  7.                 local ch = substr(`"`in'"', `i', 1)
+  8.                 if "`ch'" == "%" & `i' + 2 <= `in_len' {
+  9.                         local hexpair = upper(substr(`"`in'"', `i' + 1, 2)
+> )
+ 10.                         local h1 = strpos("0123456789ABCDEF", substr("`hex
+> pair'", 1, 1))
+ 11.                         local h2 = strpos("0123456789ABCDEF", substr("`hex
+> pair'", 2, 1))
+ 12.                         if `h1' > 0 & `h2' > 0 {
+ 13.                                 local ascii = (`h1' - 1) * 16 + (`h2' - 1)
+ 14.                                 local out = `"`out'"' + char(`ascii')
+ 15.                                 local i = `i' + 3
+ 16.                                 continue
+ 17.                         }
+ 18.                 }
+ 19.                 local out = `"`out'"' + "`ch'"
+ 20.                 local i = `i' + 1
+ 21.         }
+ 22.         c_local decoded `"`out'"'
+ 23. end
+
+. 
+. capture program drop _load_discrete_values_for_var
+
+. program define _load_discrete_values_for_var
+  1.         args raw target_var prefix
+  2.         local count 0
+  3.         c_local `prefix'_count 0
+  4.         local rest `"`raw'"'
+  5.         while `"`rest'"' != "" {
+  6.                 local pipe_pos = strpos(`"`rest'"', "|")
+  7.                 if `pipe_pos' == 0 {
+  8.                         local item `"`rest'"'
+  9.                         local rest ""
+ 10.                 }
+ 11.                 else {
+ 12.                         local item = substr(`"`rest'"', 1, `pipe_pos' - 1)
+ 13.                         local rest = substr(`"`rest'"', `pipe_pos' + 1, .)
+ 14.                 }
+ 15.                 local colon_pos = strpos(`"`item'"', ":")
+ 16.                 if `colon_pos' <= 0 {
+ 17.                         continue
+ 18.                 }
+ 19.                 local key_encoded = trim(substr(`"`item'"', 1, `colon_pos'
+>  - 1))
+ 20.                 local values_encoded = trim(substr(`"`item'"', `colon_pos'
+>  + 1, .))
+ 21.                 _urldecode `"`key_encoded'"'
+ 22.                 local parsed_key `"`decoded'"'
+ 23.                 if `"`parsed_key'"' != `"`target_var'"' {
+ 24.                         continue
+ 25.                 }
+ 26.                 local values_rest `"`values_encoded'"'
+ 27.                 while `"`values_rest'"' != "" {
+ 28.                         local sep_pos = strpos(`"`values_rest'"', ";")
+ 29.                         if `sep_pos' == 0 {
+ 30.                                 local value_encoded `"`values_rest'"'
+ 31.                                 local values_rest ""
+ 32.                         }
+ 33.                         else {
+ 34.                                 local value_encoded = substr(`"`values_res
+> t'"', 1, `sep_pos' - 1)
+ 35.                                 local values_rest = substr(`"`values_rest'
+> "', `sep_pos' + 1, .)
+ 36.                         }
+ 37.                         local value_encoded = trim(`"`value_encoded'"')
+ 38.                         if `"`value_encoded'"' == "" {
+ 39.                                 continue
+ 40.                         }
+ 41.                         _urldecode `"`value_encoded'"'
+ 42.                         local value_decoded `"`decoded'"'
+ 43.                         if `"`value_decoded'"' == "" {
+ 44.                                 continue
+ 45.                         }
+ 46.                         local count = `count' + 1
+ 47.                         c_local `prefix'_enc_`count' `"`value_encoded'"'
+ 48.                         c_local `prefix'_dec_`count' `"`value_decoded'"'
+ 49.                         c_local `prefix'_count `count'
+ 50.                 }
+ 51.                 continue, break
+ 52.         }
+ 53. end
+
+. 
+. // Build column header per user-data-spec (__ as segment separator)
+. local col_names "selection_id cv_idx vce_idx vce_suffix cv_selected score"
+
+. foreach y of global y {
+  2.         foreach x of global x {
+  3.                 local col_names "`col_names' baseline__`y'__`x'__nocv"
+  4.         }
+  5. }
+
+. foreach y of global y {
+  2.         foreach x of global x {
+  3.                 local col_names "`col_names' baseline__`y'__`x'__cv"
+  4.         }
+  5. }
+
+. if "$rob_alt_x" != "" {
+.         foreach y of global y {
+  2.                 foreach x of global rob_alt_x {
+  3.                         local col_names "`col_names' robustness_altx__`y'_
+> _`x'"
+  4.                 }
+  5.         }
+. }
+
+. if "$rob_alt_y" != "" {
+.         foreach y of global rob_alt_y {
+  2.                 foreach x of global x {
+  3.                         local col_names "`col_names' robustness_alty__`y'_
+> _`x'"
+  4.                 }
+  5.         }
+. }
+
+. if "`rob_ln_x_use'" != "" {
+.         foreach y of global y {
+  2.                 foreach x of local rob_ln_x_use {
+  3.                         local x_orig = subinstr("`x'", "_rob_ln_", "", 1)
+  4.                         local col_names "`col_names' robustness_lnx__`y'__
+> `x_orig'"
+  5.                 }
+  6.         }
+. }
+
+. if "`rob_ln_y_use'" != "" {
+.         foreach y of local rob_ln_y_use {
+  2.                 foreach x of global x {
+  3.                         local y_orig = subinstr("`y'", "_rob_ln_", "", 1)
+  4.                         local col_names "`col_names' robustness_lny__`y_or
+> ig'__`x'"
+  5.                 }
+  6.         }
+. }
+
+. if "$rob_lag_periods" != "" {
+.         foreach p of global rob_lag_periods {
+  2.                 foreach y of global y {
+  3.                         foreach x of global x {
+  4.                                 local col_names "`col_names' robustness_la
+> g__`y'__`x'__l`p'"
+  5.                         }
+  6.                 }
+  7.         }
+. }
+
+. if "$rob_year_range_cond" != "" {
+.         foreach y of global y {
+  2.                 foreach x of global x {
+  3.                         local col_names "`col_names' robustness_year__`y'_
+> _`x'"
+  4.                 }
+  5.         }
+. }
+
+. foreach y of global y {
+  2.         foreach x of global x {
+  3.                 foreach ivv of global iv {
+  4.                         local col_names "`col_names' iv__`y'__`x'__`ivv'__
+> stage1"
+  5.                         local col_names "`col_names' iv__`y'__`x'__`ivv'__
+> stage2"
+  6.                 }
+  7.         }
+  8. }
+
+. foreach med_var of global meds {
+  2.         foreach y of global y {
+  3.                 foreach x of global x {
+  4.                         local col_names "`col_names' mediation__`med_var'_
+> _`y'__`x'"
+  5.                 }
+  6.         }
+  7.         foreach x of global x {
+  8.                 local col_names "`col_names' mediation__`med_var'__M__`x'"
+  9.         }
+ 10. }
+
+. foreach mod_var of global mods {
+  2.         foreach y of global y {
+  3.                 foreach x of global x {
+  4.                         local col_names "`col_names' moderation__`mod_var'
+> __`y'__`x'"
+  5.                 }
+  6.         }
+  7. }
+
+. * Same (y,x) grouped; within each (y,x), all group values adjacent (align wit
+> h Stata final source generator)
+. foreach group_var of global heterogeneity_discrete {
+  2.         _load_discrete_values_for_var `"$heterogeneity_discrete_values"' "
+> `group_var'" discrete_vals
+  3.         if `discrete_vals_count' <= 0 {
+  4.                 continue
+  5.         }
+  6.         foreach y of global y {
+  7.                 foreach x of global x {
+  8.                         forvalues discrete_idx = 1/`discrete_vals_count' {
+  9.                                 local group_value_enc `"`discrete_vals_enc
+> _`discrete_idx''"'
+ 10.                                 local col_names "`col_names' heterogeneity
+> _group__`group_var'__`group_value_enc'__`y'__`x'"
+ 11.                         }
+ 12.                 }
+ 13.         }
+ 14. }
+
+. 
+. // CSV output path: intermediates to temp_dir, final to export_dir
+. // If csv_timestamp_arg is provided, use timestamped filename to prevent over
+> writing
+. local csv_timestamp = trim("`csv_timestamp_arg'")
+
+. if `use_range' {
+.         local csv_path "$temp_dir/combination_summary_part_`cv_start'_`cv_end
+> '.csv"
+. }
+
+. else if "`csv_timestamp'" != "" {
+.         local csv_path "$export_dir/combination_summary_`csv_timestamp'.csv"
+. }
+
+. else {
+.         local csv_path "$export_dir/combination_summary.csv"
+. }
+
+. tempname csv_fh
+
+. file open `csv_fh' using "`csv_path'", write replace
+(file .starlane/combination_summary.csv not found)
+
+. local header = subinstr(`"`col_names'"', " ", ",", .)
+
+. file write `csv_fh' "`header'" _n
+
+. 
+. // Minimum observations per cv_subset for regression; skip and log if insuffi
+> cient
+. // Reghdfe may drop singletons; use conservative threshold to avoid r(2001)
+. local min_n_cv 30
+
+. 
+. // Outer loop: cv subsets (full or chunk range)
+. // Avoid cond() with empty cv_start/cv_end when use_range=0
+. local loop_start 0
+
+. local loop_end = `n_valid' - 1
+
+. if `use_range' {
+.         local loop_start `cv_start'
+.         local loop_end `cv_end'
+. }
+
+. forvalues cv_idx = `loop_start'/`loop_end' {
+  2.         local cv_subset "`cv_sub_`cv_idx''"
+  3.         global cv "`cv_subset'"
+  4. 
+.         // Sample size check: skip cv_subset if insufficient observations for
+>  y,x,cv,panel,time
+.         preserve
+  5.         quietly egen _n_check = rowmiss($y $x $cv $panelvar $timevar)
+  6.         quietly keep if _n_check == 0
+  7.         local n_avail = _N
+  8.         restore
+  9.         if `n_avail' < `min_n_cv' {
+ 10.                 continue
+ 11.         }
+ 12. 
+.         // Sample pool and __base_sample per cv_subset (align with final-stag
+> e output)
+.         local sample_pool_vars "$panelvar $timevar $y $x $cv"
+ 13.         if "$meds" != "" local sample_pool_vars "`sample_pool_vars' $meds"
+ 14.         if "$mods" != "" local sample_pool_vars "`sample_pool_vars' $mods"
+ 15.         if "$iv" != "" local sample_pool_vars "`sample_pool_vars' $iv"
+ 16.         if "$heterogeneity_discrete" != "" local sample_pool_vars "`sample
+> _pool_vars' $heterogeneity_discrete"
+ 17.         if "$rob_alt_x" != "" local sample_pool_vars "`sample_pool_vars' $
+> rob_alt_x"
+ 18.         if "$rob_alt_y" != "" local sample_pool_vars "`sample_pool_vars' $
+> rob_alt_y"
+ 19.         quietly egen __base_miss = rmiss(`sample_pool_vars')
+ 20.         quietly gen byte __base_raw_ok = (__base_miss == 0)
+ 21.         quietly drop __base_miss
+ 22.         local first_y : word 1 of $y
+ 23.         local first_x : word 1 of $x
+ 24.         capture quietly reghdfe `first_y' `first_x' $cv if __base_raw_ok, 
+> absorb($timevar $panelvar)
+ 25.         if _rc != 0 {
+ 26.                 quietly drop __base_raw_ok
+ 27.                 continue
+ 28.         }
+ 29.         quietly gen byte __base_sample = e(sample)
+ 30.         quietly drop __base_raw_ok
+ 31. 
+.         // Inner loop: VCE types
+.         forvalues vce_idx = 1/4 {
+ 32.                 if `vce_idx' == 1 {
+ 33.                         global vce ""
+ 34.                         local vce_suffix "ols"
+ 35.                 }
+ 36.                 else if `vce_idx' == 2 {
+ 37.                         global vce "vce(robust)"
+ 38.                         local vce_suffix "robust"
+ 39.                 }
+ 40.                 else if `vce_idx' == 3 {
+ 41.                         global vce "vce(cluster $cluster_var)"
+ 42.                         local vce_suffix "cluster_$cluster_var"
+ 43.                 }
+ 44.                 else if `vce_idx' == 4 {
+ 45.                         global vce "vce(cluster $cluster_var $cluster_var2
+> )"
+ 46.                         local vce_suffix "cluster_${cluster_var}_${cluster
+> _var2}"
+ 47.                 }
+ 48. 
+.                 local vce_idx0 = `vce_idx' - 1
+ 49.                 local selection_id "`cv_idx'_`vce_idx0'"
+ 50. 
+.                 // Use temp_dir for score accumulation (intermediate; paralle
+> l workers share same temp_dir)
+.                 local scoreaccum "$temp_dir/.score_`cv_idx'_`vce_idx'.dta"
+ 51.                 postfile scorehandle str32 vce_suffix str64 section str64 
+> depvar str64 target_var coef se stars using "`scoreaccum'", replace
+ 52. 
+.                 local m 0
+ 53. 
+.                 // Baseline nocv: compute per (cv_idx,vce_idx) with if __base
+> _sample (align with final-stage output)
+.                 foreach y of global y {
+ 54.                         foreach x of global x {
+ 55.                                 local ++m
+ 56.                                 capture quietly reghdfe `y' `x' if __base_
+> sample, absorb($timevar $panelvar) $vce
+ 57.                                 if _rc == 0 {
+ 58.                                         _post_coef scorehandle "`vce_suffi
+> x'" "baseline_nocv" "`x'"
+ 59.                                 }
+ 60.                                 else {
+ 61.                                         post scorehandle ("`vce_suffix'") 
+> ("baseline_nocv") ("`y'") ("`x'") (.) (.) (0)
+ 62.                                 }
+ 63.                         }
+ 64.                 }
+ 65. 
+.                 local any_sig_cv 0
+ 66.                 local any_dir_ok 0
+ 67.                 foreach y of global y {
+ 68.                         foreach x of global x {
+ 69.                                 local ++m
+ 70.                                 capture quietly reghdfe `y' `x' $cv if __b
+> ase_sample, absorb($timevar $panelvar) $vce
+ 71.                                 if _rc == 0 {
+ 72.                                         _post_coef scorehandle "`vce_suffi
+> x'" "baseline_cv" "`x'"
+ 73.                                         capture {
+ 74.                                                 local coef_cv = _b[`x']
+ 75.                                                 local se_cv = _se[`x']
+ 76.                                                 if !missing(`coef_cv') & !
+> missing(`se_cv') & `se_cv' > 0 {
+ 77.                                                         local t = `coef_cv
+> ' / `se_cv'
+ 78.                                                         capture local df =
+>  e(df_r)
+ 79.                                                         if _rc != 0 | miss
+> ing(`df') capture local df = e(N) - e(df_m) - 1
+ 80.                                                         if missing(`df') |
+>  `df' <= 0 local df 999999
+ 81.                                                         if 2 * ttail(`df',
+>  abs(`t')) < 0.1 local any_sig_cv 1
+ 82.                                                 }
+ 83.                                                 if !missing(`coef_cv') {
+ 84.                                                         if ("$coef_directi
+> on" == "positive" & `coef_cv' > 0) | ("$coef_direction" == "negative" & `coef
+> _cv' < 0) {
+ 85.                                                                 local any_
+> dir_ok 1
+ 86.                                                         }
+ 87.                                                 }
+ 88.                                         }
+ 89.                                 }
+ 90.                                 else {
+ 91.                                         post scorehandle ("`vce_suffix'") 
+> ("baseline_cv") ("`y'") ("`x'") (.) (.) (0)
+ 92.                                 }
+ 93.                         }
+ 94.                 }
+ 95. 
+.                 // Robustness (skip unless at least one baseline-cv is signif
+> icant AND has correct direction), order per user-data-spec: alt_x, alt_y, ln_
+> x, ln_y, lag, year
+.                 if `any_sig_cv' & `any_dir_ok' {
+ 96.                 if "$rob_alt_x" != "" {
+ 97.                         foreach y of global y {
+ 98.                                 foreach x of global rob_alt_x {
+ 99.                                         local ++m
+100.                                         capture quietly reghdfe `y' `x' $c
+> v if __base_sample, absorb($timevar $panelvar) $vce
+101.                                         if _rc == 0 {
+102.                                                 _post_coef scorehandle "`v
+> ce_suffix'" "robustness_alt_x" "`x'"
+103.                                         }
+104.                                         else {
+105.                                                 post scorehandle ("`vce_su
+> ffix'") ("robustness_alt_x") ("`y'") ("`x'") (.) (.) (0)
+106.                                         }
+107.                                 }
+108.                         }
+109.                 }
+110.                 if "$rob_alt_y" != "" {
+111.                         foreach y of global rob_alt_y {
+112.                                 foreach x of global x {
+113.                                         local ++m
+114.                                         capture quietly reghdfe `y' `x' $c
+> v if __base_sample, absorb($timevar $panelvar) $vce
+115.                                         if _rc == 0 {
+116.                                                 _post_coef scorehandle "`v
+> ce_suffix'" "robustness_alt_y" "`x'"
+117.                                         }
+118.                                         else {
+119.                                                 post scorehandle ("`vce_su
+> ffix'") ("robustness_alt_y") ("`y'") ("`x'") (.) (.) (0)
+120.                                         }
+121.                                 }
+122.                         }
+123.                 }
+124.                 if "`rob_ln_x_use'" != "" {
+125.                         foreach y of global y {
+126.                                 foreach x of local rob_ln_x_use {
+127.                                         local ++m
+128.                                         capture quietly reghdfe `y' `x' $c
+> v if __base_sample, absorb($timevar $panelvar) $vce
+129.                                         if _rc == 0 {
+130.                                                 _post_coef scorehandle "`v
+> ce_suffix'" "robustness_ln_x" "`x'"
+131.                                         }
+132.                                         else {
+133.                                                 post scorehandle ("`vce_su
+> ffix'") ("robustness_ln_x") ("`y'") ("`x'") (.) (.) (0)
+134.                                         }
+135.                                 }
+136.                         }
+137.                 }
+138.                 if "`rob_ln_y_use'" != "" {
+139.                         foreach y of local rob_ln_y_use {
+140.                                 foreach x of global x {
+141.                                         local ++m
+142.                                         capture quietly reghdfe `y' `x' $c
+> v if __base_sample, absorb($timevar $panelvar) $vce
+143.                                         if _rc == 0 {
+144.                                                 _post_coef scorehandle "`v
+> ce_suffix'" "robustness_ln_y" "`x'"
+145.                                         }
+146.                                         else {
+147.                                                 post scorehandle ("`vce_su
+> ffix'") ("robustness_ln_y") ("`y'") ("`x'") (.) (.) (0)
+148.                                         }
+149.                                 }
+150.                         }
+151.                 }
+152.                 if "$rob_lag_periods" != "" {
+153.                         foreach p of global rob_lag_periods {
+154.                                 foreach y of global y {
+155.                                         foreach x of global x {
+156.                                                 local ++m
+157.                                                 capture quietly reghdfe `y
+> ' l`p'.`x' $cv if __base_sample, absorb($timevar $panelvar) $vce
+158.                                                 if _rc == 0 {
+159.                                                         _post_coef scoreha
+> ndle "`vce_suffix'" "robustness_lag" "l`p'.`x'"
+160.                                                 }
+161.                                                 else {
+162.                                                         post scorehandle (
+> "`vce_suffix'") ("robustness_lag") ("`y'") ("l`p'.`x'") (.) (.) (0)
+163.                                                 }
+164.                                         }
+165.                                 }
+166.                         }
+167.                 }
+168.                 if "$rob_year_range_cond" != "" {
+169.                         foreach y of global y {
+170.                                 foreach x of global x {
+171.                                         local ++m
+172.                                         capture quietly reghdfe `y' `x' $c
+> v if __base_sample & $rob_year_range_cond, absorb($timevar $panelvar) $vce
+173.                                         if _rc == 0 {
+174.                                                 _post_coef scorehandle "`v
+> ce_suffix'" "robustness_year" "`x'"
+175.                                         }
+176.                                         else {
+177.                                                 post scorehandle ("`vce_su
+> ffix'") ("robustness_year") ("`y'") ("`x'") (.) (.) (0)
+178.                                         }
+179.                                 }
+180.                         }
+181.                 }
+182. 
+.                 // IV (per user-data-spec: 2SLS two stages, stage1=iv coef in
+>  x~iv+cv, stage2=x coef in y~x_hat+cv)
+.                 if "$iv" != "" {
+183.                         foreach y of global y {
+184.                                 foreach x of global x {
+185.                                         foreach ivv of global iv {
+186.                                                 local ++m
+187.                                                 capture quietly reghdfe `x
+> ' `ivv' $cv if __base_sample, absorb($timevar $panelvar) $vce
+188.                                                 if _rc == 0 {
+189.                                                         _post_coef scoreha
+> ndle "`vce_suffix'" "iv_stage1" "`ivv'"
+190.                                                 }
+191.                                                 else {
+192.                                                         post scorehandle (
+> "`vce_suffix'") ("iv_stage1") ("`x'") ("`ivv'") (.) (.) (0)
+193.                                                 }
+194.                                                 local ++m
+195.                                                 capture quietly ivreghdfe 
+> `y' $cv (`x' = `ivv') if __base_sample, absorb($timevar $panelvar) $vce
+196.                                                 if _rc == 0 {
+197.                                                         _post_coef scoreha
+> ndle "`vce_suffix'" "iv_stage2" "`x'"
+198.                                                 }
+199.                                                 else {
+200.                                                         post scorehandle (
+> "`vce_suffix'") ("iv_stage2") ("`y'") ("`x'") (.) (.) (0)
+201.                                                 }
+202.                                         }
+203.                                 }
+204.                         }
+205.                 }
+206. 
+.                 // Mediation
+.                 foreach med_var of global meds {
+207.                         foreach y of global y {
+208.                                 foreach x of global x {
+209.                                         local ++m
+210.                                         capture quietly reghdfe `y' `x' $c
+> v if __base_sample, absorb($timevar $panelvar) $vce
+211.                                         if _rc == 0 {
+212.                                                 _post_coef scorehandle "`v
+> ce_suffix'" "mediation_`med_var'" "`x'"
+213.                                         }
+214.                                         else {
+215.                                                 post scorehandle ("`vce_su
+> ffix'") ("mediation_`med_var'") ("`y'") ("`x'") (.) (.) (0)
+216.                                         }
+217.                                 }
+218.                         }
+219.                         foreach x of global x {
+220.                                 local ++m
+221.                                 capture quietly reghdfe `med_var' `x' $cv 
+> if __base_sample, absorb($timevar $panelvar) $vce
+222.                                 if _rc == 0 {
+223.                                         _post_coef scorehandle "`vce_suffi
+> x'" "mediation_`med_var'" "`x'"
+224.                                 }
+225.                                 else {
+226.                                         post scorehandle ("`vce_suffix'") 
+> ("mediation_`med_var'") ("`med_var'") ("`x'") (.) (.) (0)
+227.                                 }
+228.                         }
+229.                 }
+230. 
+.                 // Moderation (std vars already created before loop)
+.                 if "$mods" != "" {
+231.                         foreach mod_var of global mods {
+232.                                 foreach y of global y {
+233.                                         foreach x of global x {
+234.                                                 local ++m
+235.                                                 capture quietly reghdfe `y
+> ' c.std_x_`x'##c.std_mod_`mod_var' $cv if __base_sample, absorb($timevar $pan
+> elvar) $vce
+236.                                                 if _rc == 0 {
+237.                                                         local coef = _b[c.
+> std_x_`x'#c.std_mod_`mod_var']
+238.                                                         local se   = _se[c
+> .std_x_`x'#c.std_mod_`mod_var']
+239.                                                         local dep  = "`e(d
+> epvar)'"
+240.                                                         _calc_effective_st
+> ars `coef' `se'
+241.                                                         post scorehandle (
+> "`vce_suffix'") ("moderation_`mod_var'") ("`dep'") ("interaction") (`coef') (
+> `se') (`effective_stars')
+242.                                                 }
+243.                                                 else {
+244.                                                         post scorehandle (
+> "`vce_suffix'") ("moderation_`mod_var'") ("`y'") ("interaction") (.) (.) (0)
+245.                                                 }
+246.                                         }
+247.                                 }
+248.                         }
+249.                 }
+250.                 * Same (y,x) grouped; within each (y,x), all group values 
+> adjacent (align with Stata final source generator)
+.                 foreach group_var of global heterogeneity_discrete {
+251.                         _load_discrete_values_for_var `"$heterogeneity_dis
+> crete_values"' "`group_var'" discrete_vals
+252.                         if `discrete_vals_count' <= 0 {
+253.                                 continue
+254.                         }
+255.                         foreach y of global y {
+256.                                 foreach x of global x {
+257.                                         forvalues discrete_idx = 1/`discre
+> te_vals_count' {
+258.                                                 local group_value_dec `"`d
+> iscrete_vals_dec_`discrete_idx''"'
+259.                                                 local section_name "hetero
+> geneity_discrete_`group_var'_`discrete_idx'"
+260.                                                 capture confirm number `gr
+> oup_value_dec'
+261.                                                 if _rc == 0 {
+262.                                                         local group_cond "
+> `group_var' == `group_value_dec'"
+263.                                                 }
+264.                                                 else {
+265.                                                         local group_value_
+> escaped = subinstr(`"`group_value_dec'"', `"""', `""""', .)
+266.                                                         local group_cond `
+> "`group_var' == "`group_value_escaped'""'
+267.                                                 }
+268.                                                 local ++m
+269.                                                 capture quietly reghdfe `y
+> ' `x' $cv if __base_sample & `group_cond', absorb($timevar $panelvar) $vce
+270.                                                 if _rc == 0 {
+271.                                                         _post_coef scoreha
+> ndle "`vce_suffix'" "`section_name'" "`x'"
+272.                                                 }
+273.                                                 else {
+274.                                                         post scorehandle (
+> "`vce_suffix'") ("`section_name'") ("`y'") ("`x'") (.) (.) (0)
+275.                                                 }
+276.                                         }
+277.                                 }
+278.                         }
+279.                 }
+280.                 }
+281. 
+.                 postclose scorehandle
+282. 
+.                 // Compute score and build row from scoreaccum (coef+stars pe
+> r user-data-spec)
+.                 tempname S_score
+283.                 preserve
+284.                 scalar `S_score' = 0
+285.                 capture use "`scoreaccum'", clear
+286.                 if _rc == 0 & _N > 0 {
+287.                         capture collapse (max) stars, by(vce_suffix sectio
+> n)
+288.                         if _rc == 0 {
+289.                                 capture collapse (sum) stars, by(vce_suffi
+> x)
+290.                                 if _rc == 0 {
+291.                                         quietly summarize stars
+292.                                         scalar `S_score' = cond(r(N) > 0, 
+> r(sum), 0)
+293.                                 }
+294.                         }
+295.                 }
+296.                 restore
+297. 
+.                 preserve
+298.                 capture use "`scoreaccum'", clear
+299.                 local row_vals ""
+300.                 local n_coef : word count `col_names'
+301.                 local n_coef = `n_coef' - 6
+302.                 local n_rows = cond(_rc == 0 & _N > 0, _N, 0)
+303.                 if `n_rows' > 0 {
+304.                         forvalues i = 1/`n_rows' {
+305.                                 local c = coef[`i']
+306.                                 local s = stars[`i']
+307.                                 if missing(`c') {
+308.                                         local v ""
+309.                                 }
+310.                                 else {
+311.                                         local star_str = cond(`s' >= 3, "*
+> **", cond(`s' >= 2, "**", cond(`s' >= 1, "*", "")))
+312.                                         local v "`=strofreal(`c')'`star_st
+> r'"
+313.                                 }
+314.                                 local row_vals "`row_vals'`v',"
+315.                         }
+316.                 }
+317.                 local n_pad = `n_coef' - `n_rows'
+318.                 forvalues i = 1/`=max(0, `n_pad')' {
+319.                         local row_vals "`row_vals',"
+320.                 }
+321.                 if length("`row_vals'") > 0 {
+322.                         local row_vals = substr("`row_vals'", 1, length("`
+> row_vals'") - 1)
+323.                 }
+324.                 restore
+325. 
+.                 local score_str = strofreal(scalar(`S_score'))
+326.                 local cv_selected_csv = subinstr("`cv_subset'", " ", "|", 
+> .)
+327.                 file write `csv_fh' "`selection_id',`cv_idx',`vce_idx0',`v
+> ce_suffix',`cv_selected_csv',`score_str',`row_vals'" _n
+328. 
+.                 * Temp files; cleanup runs periodically.
+.         }
+329.         quietly drop __base_sample
+330. }
+(file .starlane/tmp/.score_0_1.dta not found)
+(file .starlane/tmp/.score_0_2.dta not found)
+(file .starlane/tmp/.score_0_3.dta not found)
+(file .starlane/tmp/.score_0_4.dta not found)
+(file .starlane/tmp/.score_1_1.dta not found)
+(file .starlane/tmp/.score_1_2.dta not found)
+(file .starlane/tmp/.score_1_3.dta not found)
+(file .starlane/tmp/.score_1_4.dta not found)
+(file .starlane/tmp/.score_2_1.dta not found)
+(file .starlane/tmp/.score_2_2.dta not found)
+(file .starlane/tmp/.score_2_3.dta not found)
+(file .starlane/tmp/.score_2_4.dta not found)
+(file .starlane/tmp/.score_3_1.dta not found)
+(file .starlane/tmp/.score_3_2.dta not found)
+(file .starlane/tmp/.score_3_3.dta not found)
+(file .starlane/tmp/.score_3_4.dta not found)
+(file .starlane/tmp/.score_4_1.dta not found)
+(file .starlane/tmp/.score_4_2.dta not found)
+(file .starlane/tmp/.score_4_3.dta not found)
+(file .starlane/tmp/.score_4_4.dta not found)
+(file .starlane/tmp/.score_5_1.dta not found)
+(file .starlane/tmp/.score_5_2.dta not found)
+(file .starlane/tmp/.score_5_3.dta not found)
+(file .starlane/tmp/.score_5_4.dta not found)
+(file .starlane/tmp/.score_6_1.dta not found)
+(file .starlane/tmp/.score_6_2.dta not found)
+(file .starlane/tmp/.score_6_3.dta not found)
+(file .starlane/tmp/.score_6_4.dta not found)
+(file .starlane/tmp/.score_7_1.dta not found)
+(file .starlane/tmp/.score_7_2.dta not found)
+(file .starlane/tmp/.score_7_3.dta not found)
+(file .starlane/tmp/.score_7_4.dta not found)
+(file .starlane/tmp/.score_8_1.dta not found)
+(file .starlane/tmp/.score_8_2.dta not found)
+(file .starlane/tmp/.score_8_3.dta not found)
+(file .starlane/tmp/.score_8_4.dta not found)
+(file .starlane/tmp/.score_9_1.dta not found)
+(file .starlane/tmp/.score_9_2.dta not found)
+(file .starlane/tmp/.score_9_3.dta not found)
+(file .starlane/tmp/.score_9_4.dta not found)
+(file .starlane/tmp/.score_10_1.dta not found)
+(file .starlane/tmp/.score_10_2.dta not found)
+(file .starlane/tmp/.score_10_3.dta not found)
+(file .starlane/tmp/.score_10_4.dta not found)
+(file .starlane/tmp/.score_11_1.dta not found)
+(file .starlane/tmp/.score_11_2.dta not found)
+(file .starlane/tmp/.score_11_3.dta not found)
+(file .starlane/tmp/.score_11_4.dta not found)
+(file .starlane/tmp/.score_12_1.dta not found)
+(file .starlane/tmp/.score_12_2.dta not found)
+(file .starlane/tmp/.score_12_3.dta not found)
+(file .starlane/tmp/.score_12_4.dta not found)
+(file .starlane/tmp/.score_13_1.dta not found)
+(file .starlane/tmp/.score_13_2.dta not found)
+(file .starlane/tmp/.score_13_3.dta not found)
+(file .starlane/tmp/.score_13_4.dta not found)
+(file .starlane/tmp/.score_14_1.dta not found)
+(file .starlane/tmp/.score_14_2.dta not found)
+(file .starlane/tmp/.score_14_3.dta not found)
+(file .starlane/tmp/.score_14_4.dta not found)
+(file .starlane/tmp/.score_15_1.dta not found)
+(file .starlane/tmp/.score_15_2.dta not found)
+(file .starlane/tmp/.score_15_3.dta not found)
+(file .starlane/tmp/.score_15_4.dta not found)
+(file .starlane/tmp/.score_16_1.dta not found)
+(file .starlane/tmp/.score_16_2.dta not found)
+(file .starlane/tmp/.score_16_3.dta not found)
+(file .starlane/tmp/.score_16_4.dta not found)
+(file .starlane/tmp/.score_17_1.dta not found)
+(file .starlane/tmp/.score_17_2.dta not found)
+(file .starlane/tmp/.score_17_3.dta not found)
+(file .starlane/tmp/.score_17_4.dta not found)
+(file .starlane/tmp/.score_18_1.dta not found)
+(file .starlane/tmp/.score_18_2.dta not found)
+(file .starlane/tmp/.score_18_3.dta not found)
+(file .starlane/tmp/.score_18_4.dta not found)
+(file .starlane/tmp/.score_19_1.dta not found)
+(file .starlane/tmp/.score_19_2.dta not found)
+(file .starlane/tmp/.score_19_3.dta not found)
+(file .starlane/tmp/.score_19_4.dta not found)
+(file .starlane/tmp/.score_20_1.dta not found)
+(file .starlane/tmp/.score_20_2.dta not found)
+(file .starlane/tmp/.score_20_3.dta not found)
+(file .starlane/tmp/.score_20_4.dta not found)
+(file .starlane/tmp/.score_21_1.dta not found)
+(file .starlane/tmp/.score_21_2.dta not found)
+(file .starlane/tmp/.score_21_3.dta not found)
+(file .starlane/tmp/.score_21_4.dta not found)
+(file .starlane/tmp/.score_22_1.dta not found)
+(file .starlane/tmp/.score_22_2.dta not found)
+(file .starlane/tmp/.score_22_3.dta not found)
+(file .starlane/tmp/.score_22_4.dta not found)
+(file .starlane/tmp/.score_23_1.dta not found)
+(file .starlane/tmp/.score_23_2.dta not found)
+(file .starlane/tmp/.score_23_3.dta not found)
+(file .starlane/tmp/.score_23_4.dta not found)
+(file .starlane/tmp/.score_24_1.dta not found)
+(file .starlane/tmp/.score_24_2.dta not found)
+(file .starlane/tmp/.score_24_3.dta not found)
+(file .starlane/tmp/.score_24_4.dta not found)
+(file .starlane/tmp/.score_25_1.dta not found)
+(file .starlane/tmp/.score_25_2.dta not found)
+(file .starlane/tmp/.score_25_3.dta not found)
+(file .starlane/tmp/.score_25_4.dta not found)
+(file .starlane/tmp/.score_26_1.dta not found)
+(file .starlane/tmp/.score_26_2.dta not found)
+(file .starlane/tmp/.score_26_3.dta not found)
+(file .starlane/tmp/.score_26_4.dta not found)
+(file .starlane/tmp/.score_27_1.dta not found)
+(file .starlane/tmp/.score_27_2.dta not found)
+(file .starlane/tmp/.score_27_3.dta not found)
+(file .starlane/tmp/.score_27_4.dta not found)
+(file .starlane/tmp/.score_28_1.dta not found)
+(file .starlane/tmp/.score_28_2.dta not found)
+(file .starlane/tmp/.score_28_3.dta not found)
+(file .starlane/tmp/.score_28_4.dta not found)
+(file .starlane/tmp/.score_29_1.dta not found)
+(file .starlane/tmp/.score_29_2.dta not found)
+(file .starlane/tmp/.score_29_3.dta not found)
+(file .starlane/tmp/.score_29_4.dta not found)
+(file .starlane/tmp/.score_30_1.dta not found)
+(file .starlane/tmp/.score_30_2.dta not found)
+(file .starlane/tmp/.score_30_3.dta not found)
+(file .starlane/tmp/.score_30_4.dta not found)
+(file .starlane/tmp/.score_31_1.dta not found)
+(file .starlane/tmp/.score_31_2.dta not found)
+(file .starlane/tmp/.score_31_3.dta not found)
+(file .starlane/tmp/.score_31_4.dta not found)
+(file .starlane/tmp/.score_32_1.dta not found)
+(file .starlane/tmp/.score_32_2.dta not found)
+(file .starlane/tmp/.score_32_3.dta not found)
+(file .starlane/tmp/.score_32_4.dta not found)
+(file .starlane/tmp/.score_33_1.dta not found)
+(file .starlane/tmp/.score_33_2.dta not found)
+(file .starlane/tmp/.score_33_3.dta not found)
+(file .starlane/tmp/.score_33_4.dta not found)
+(file .starlane/tmp/.score_34_1.dta not found)
+(file .starlane/tmp/.score_34_2.dta not found)
+(file .starlane/tmp/.score_34_3.dta not found)
+(file .starlane/tmp/.score_34_4.dta not found)
+(file .starlane/tmp/.score_35_1.dta not found)
+(file .starlane/tmp/.score_35_2.dta not found)
+(file .starlane/tmp/.score_35_3.dta not found)
+(file .starlane/tmp/.score_35_4.dta not found)
+(file .starlane/tmp/.score_36_1.dta not found)
+(file .starlane/tmp/.score_36_2.dta not found)
+(file .starlane/tmp/.score_36_3.dta not found)
+(file .starlane/tmp/.score_36_4.dta not found)
+(file .starlane/tmp/.score_37_1.dta not found)
+(file .starlane/tmp/.score_37_2.dta not found)
+(file .starlane/tmp/.score_37_3.dta not found)
+(file .starlane/tmp/.score_37_4.dta not found)
+(file .starlane/tmp/.score_38_1.dta not found)
+(file .starlane/tmp/.score_38_2.dta not found)
+(file .starlane/tmp/.score_38_3.dta not found)
+(file .starlane/tmp/.score_38_4.dta not found)
+(file .starlane/tmp/.score_39_1.dta not found)
+(file .starlane/tmp/.score_39_2.dta not found)
+(file .starlane/tmp/.score_39_3.dta not found)
+(file .starlane/tmp/.score_39_4.dta not found)
+(file .starlane/tmp/.score_40_1.dta not found)
+(file .starlane/tmp/.score_40_2.dta not found)
+(file .starlane/tmp/.score_40_3.dta not found)
+(file .starlane/tmp/.score_40_4.dta not found)
+(file .starlane/tmp/.score_41_1.dta not found)
+(file .starlane/tmp/.score_41_2.dta not found)
+(file .starlane/tmp/.score_41_3.dta not found)
+(file .starlane/tmp/.score_41_4.dta not found)
+(file .starlane/tmp/.score_42_1.dta not found)
+(file .starlane/tmp/.score_42_2.dta not found)
+(file .starlane/tmp/.score_42_3.dta not found)
+(file .starlane/tmp/.score_42_4.dta not found)
+(file .starlane/tmp/.score_43_1.dta not found)
+(file .starlane/tmp/.score_43_2.dta not found)
+(file .starlane/tmp/.score_43_3.dta not found)
+(file .starlane/tmp/.score_43_4.dta not found)
+(file .starlane/tmp/.score_44_1.dta not found)
+(file .starlane/tmp/.score_44_2.dta not found)
+(file .starlane/tmp/.score_44_3.dta not found)
+(file .starlane/tmp/.score_44_4.dta not found)
+(file .starlane/tmp/.score_45_1.dta not found)
+(file .starlane/tmp/.score_45_2.dta not found)
+(file .starlane/tmp/.score_45_3.dta not found)
+(file .starlane/tmp/.score_45_4.dta not found)
+(file .starlane/tmp/.score_46_1.dta not found)
+(file .starlane/tmp/.score_46_2.dta not found)
+(file .starlane/tmp/.score_46_3.dta not found)
+(file .starlane/tmp/.score_46_4.dta not found)
+(file .starlane/tmp/.score_47_1.dta not found)
+(file .starlane/tmp/.score_47_2.dta not found)
+(file .starlane/tmp/.score_47_3.dta not found)
+(file .starlane/tmp/.score_47_4.dta not found)
+(file .starlane/tmp/.score_48_1.dta not found)
+(file .starlane/tmp/.score_48_2.dta not found)
+(file .starlane/tmp/.score_48_3.dta not found)
+(file .starlane/tmp/.score_48_4.dta not found)
+(file .starlane/tmp/.score_49_1.dta not found)
+(file .starlane/tmp/.score_49_2.dta not found)
+(file .starlane/tmp/.score_49_3.dta not found)
+(file .starlane/tmp/.score_49_4.dta not found)
+(file .starlane/tmp/.score_50_1.dta not found)
+(file .starlane/tmp/.score_50_2.dta not found)
+(file .starlane/tmp/.score_50_3.dta not found)
+(file .starlane/tmp/.score_50_4.dta not found)
+(file .starlane/tmp/.score_51_1.dta not found)
+(file .starlane/tmp/.score_51_2.dta not found)
+(file .starlane/tmp/.score_51_3.dta not found)
+(file .starlane/tmp/.score_51_4.dta not found)
+(file .starlane/tmp/.score_52_1.dta not found)
+(file .starlane/tmp/.score_52_2.dta not found)
+(file .starlane/tmp/.score_52_3.dta not found)
+(file .starlane/tmp/.score_52_4.dta not found)
+(file .starlane/tmp/.score_53_1.dta not found)
+(file .starlane/tmp/.score_53_2.dta not found)
+(file .starlane/tmp/.score_53_3.dta not found)
+(file .starlane/tmp/.score_53_4.dta not found)
+(file .starlane/tmp/.score_54_1.dta not found)
+(file .starlane/tmp/.score_54_2.dta not found)
+(file .starlane/tmp/.score_54_3.dta not found)
+(file .starlane/tmp/.score_54_4.dta not found)
+(file .starlane/tmp/.score_55_1.dta not found)
+(file .starlane/tmp/.score_55_2.dta not found)
+(file .starlane/tmp/.score_55_3.dta not found)
+(file .starlane/tmp/.score_55_4.dta not found)
+(file .starlane/tmp/.score_56_1.dta not found)
+(file .starlane/tmp/.score_56_2.dta not found)
+(file .starlane/tmp/.score_56_3.dta not found)
+(file .starlane/tmp/.score_56_4.dta not found)
+(file .starlane/tmp/.score_57_1.dta not found)
+(file .starlane/tmp/.score_57_2.dta not found)
+(file .starlane/tmp/.score_57_3.dta not found)
+(file .starlane/tmp/.score_57_4.dta not found)
+(file .starlane/tmp/.score_58_1.dta not found)
+(file .starlane/tmp/.score_58_2.dta not found)
+(file .starlane/tmp/.score_58_3.dta not found)
+(file .starlane/tmp/.score_58_4.dta not found)
+(file .starlane/tmp/.score_59_1.dta not found)
+(file .starlane/tmp/.score_59_2.dta not found)
+(file .starlane/tmp/.score_59_3.dta not found)
+(file .starlane/tmp/.score_59_4.dta not found)
+(file .starlane/tmp/.score_60_1.dta not found)
+(file .starlane/tmp/.score_60_2.dta not found)
+(file .starlane/tmp/.score_60_3.dta not found)
+(file .starlane/tmp/.score_60_4.dta not found)
+(file .starlane/tmp/.score_61_1.dta not found)
+(file .starlane/tmp/.score_61_2.dta not found)
+(file .starlane/tmp/.score_61_3.dta not found)
+(file .starlane/tmp/.score_61_4.dta not found)
+(file .starlane/tmp/.score_62_1.dta not found)
+(file .starlane/tmp/.score_62_2.dta not found)
+(file .starlane/tmp/.score_62_3.dta not found)
+(file .starlane/tmp/.score_62_4.dta not found)
+(file .starlane/tmp/.score_63_1.dta not found)
+(file .starlane/tmp/.score_63_2.dta not found)
+(file .starlane/tmp/.score_63_3.dta not found)
+(file .starlane/tmp/.score_63_4.dta not found)
+(file .starlane/tmp/.score_64_1.dta not found)
+(file .starlane/tmp/.score_64_2.dta not found)
+(file .starlane/tmp/.score_64_3.dta not found)
+(file .starlane/tmp/.score_64_4.dta not found)
+(file .starlane/tmp/.score_65_1.dta not found)
+(file .starlane/tmp/.score_65_2.dta not found)
+(file .starlane/tmp/.score_65_3.dta not found)
+(file .starlane/tmp/.score_65_4.dta not found)
+(file .starlane/tmp/.score_66_1.dta not found)
+(file .starlane/tmp/.score_66_2.dta not found)
+(file .starlane/tmp/.score_66_3.dta not found)
+(file .starlane/tmp/.score_66_4.dta not found)
+(file .starlane/tmp/.score_67_1.dta not found)
+(file .starlane/tmp/.score_67_2.dta not found)
+(file .starlane/tmp/.score_67_3.dta not found)
+(file .starlane/tmp/.score_67_4.dta not found)
+(file .starlane/tmp/.score_68_1.dta not found)
+(file .starlane/tmp/.score_68_2.dta not found)
+(file .starlane/tmp/.score_68_3.dta not found)
+(file .starlane/tmp/.score_68_4.dta not found)
+(file .starlane/tmp/.score_69_1.dta not found)
+(file .starlane/tmp/.score_69_2.dta not found)
+(file .starlane/tmp/.score_69_3.dta not found)
+(file .starlane/tmp/.score_69_4.dta not found)
+(file .starlane/tmp/.score_70_1.dta not found)
+(file .starlane/tmp/.score_70_2.dta not found)
+(file .starlane/tmp/.score_70_3.dta not found)
+(file .starlane/tmp/.score_70_4.dta not found)
+(file .starlane/tmp/.score_71_1.dta not found)
+(file .starlane/tmp/.score_71_2.dta not found)
+(file .starlane/tmp/.score_71_3.dta not found)
+(file .starlane/tmp/.score_71_4.dta not found)
+(file .starlane/tmp/.score_72_1.dta not found)
+(file .starlane/tmp/.score_72_2.dta not found)
+(file .starlane/tmp/.score_72_3.dta not found)
+(file .starlane/tmp/.score_72_4.dta not found)
+(file .starlane/tmp/.score_73_1.dta not found)
+(file .starlane/tmp/.score_73_2.dta not found)
+(file .starlane/tmp/.score_73_3.dta not found)
+(file .starlane/tmp/.score_73_4.dta not found)
+(file .starlane/tmp/.score_74_1.dta not found)
+(file .starlane/tmp/.score_74_2.dta not found)
+(file .starlane/tmp/.score_74_3.dta not found)
+(file .starlane/tmp/.score_74_4.dta not found)
+(file .starlane/tmp/.score_75_1.dta not found)
+(file .starlane/tmp/.score_75_2.dta not found)
+(file .starlane/tmp/.score_75_3.dta not found)
+(file .starlane/tmp/.score_75_4.dta not found)
+(file .starlane/tmp/.score_76_1.dta not found)
+(file .starlane/tmp/.score_76_2.dta not found)
+(file .starlane/tmp/.score_76_3.dta not found)
+(file .starlane/tmp/.score_76_4.dta not found)
+(file .starlane/tmp/.score_77_1.dta not found)
+(file .starlane/tmp/.score_77_2.dta not found)
+(file .starlane/tmp/.score_77_3.dta not found)
+(file .starlane/tmp/.score_77_4.dta not found)
+(file .starlane/tmp/.score_78_1.dta not found)
+(file .starlane/tmp/.score_78_2.dta not found)
+(file .starlane/tmp/.score_78_3.dta not found)
+(file .starlane/tmp/.score_78_4.dta not found)
+(file .starlane/tmp/.score_79_1.dta not found)
+(file .starlane/tmp/.score_79_2.dta not found)
+(file .starlane/tmp/.score_79_3.dta not found)
+(file .starlane/tmp/.score_79_4.dta not found)
+(file .starlane/tmp/.score_80_1.dta not found)
+(file .starlane/tmp/.score_80_2.dta not found)
+(file .starlane/tmp/.score_80_3.dta not found)
+(file .starlane/tmp/.score_80_4.dta not found)
+(file .starlane/tmp/.score_81_1.dta not found)
+(file .starlane/tmp/.score_81_2.dta not found)
+(file .starlane/tmp/.score_81_3.dta not found)
+(file .starlane/tmp/.score_81_4.dta not found)
+(file .starlane/tmp/.score_82_1.dta not found)
+(file .starlane/tmp/.score_82_2.dta not found)
+(file .starlane/tmp/.score_82_3.dta not found)
+(file .starlane/tmp/.score_82_4.dta not found)
+(file .starlane/tmp/.score_83_1.dta not found)
+(file .starlane/tmp/.score_83_2.dta not found)
+(file .starlane/tmp/.score_83_3.dta not found)
+(file .starlane/tmp/.score_83_4.dta not found)
+(file .starlane/tmp/.score_84_1.dta not found)
+(file .starlane/tmp/.score_84_2.dta not found)
+(file .starlane/tmp/.score_84_3.dta not found)
+(file .starlane/tmp/.score_84_4.dta not found)
+(file .starlane/tmp/.score_85_1.dta not found)
+(file .starlane/tmp/.score_85_2.dta not found)
+(file .starlane/tmp/.score_85_3.dta not found)
+(file .starlane/tmp/.score_85_4.dta not found)
+(file .starlane/tmp/.score_86_1.dta not found)
+(file .starlane/tmp/.score_86_2.dta not found)
+(file .starlane/tmp/.score_86_3.dta not found)
+(file .starlane/tmp/.score_86_4.dta not found)
+(file .starlane/tmp/.score_87_1.dta not found)
+(file .starlane/tmp/.score_87_2.dta not found)
+(file .starlane/tmp/.score_87_3.dta not found)
+(file .starlane/tmp/.score_87_4.dta not found)
+(file .starlane/tmp/.score_88_1.dta not found)
+(file .starlane/tmp/.score_88_2.dta not found)
+(file .starlane/tmp/.score_88_3.dta not found)
+(file .starlane/tmp/.score_88_4.dta not found)
+(file .starlane/tmp/.score_89_1.dta not found)
+(file .starlane/tmp/.score_89_2.dta not found)
+(file .starlane/tmp/.score_89_3.dta not found)
+(file .starlane/tmp/.score_89_4.dta not found)
+(file .starlane/tmp/.score_90_1.dta not found)
+(file .starlane/tmp/.score_90_2.dta not found)
+(file .starlane/tmp/.score_90_3.dta not found)
+(file .starlane/tmp/.score_90_4.dta not found)
+(file .starlane/tmp/.score_91_1.dta not found)
+(file .starlane/tmp/.score_91_2.dta not found)
+(file .starlane/tmp/.score_91_3.dta not found)
+(file .starlane/tmp/.score_91_4.dta not found)
+(file .starlane/tmp/.score_92_1.dta not found)
+(file .starlane/tmp/.score_92_2.dta not found)
+(file .starlane/tmp/.score_92_3.dta not found)
+(file .starlane/tmp/.score_92_4.dta not found)
+(file .starlane/tmp/.score_93_1.dta not found)
+(file .starlane/tmp/.score_93_2.dta not found)
+(file .starlane/tmp/.score_93_3.dta not found)
+(file .starlane/tmp/.score_93_4.dta not found)
+(file .starlane/tmp/.score_94_1.dta not found)
+(file .starlane/tmp/.score_94_2.dta not found)
+(file .starlane/tmp/.score_94_3.dta not found)
+(file .starlane/tmp/.score_94_4.dta not found)
+(file .starlane/tmp/.score_95_1.dta not found)
+(file .starlane/tmp/.score_95_2.dta not found)
+(file .starlane/tmp/.score_95_3.dta not found)
+(file .starlane/tmp/.score_95_4.dta not found)
+(file .starlane/tmp/.score_96_1.dta not found)
+(file .starlane/tmp/.score_96_2.dta not found)
+(file .starlane/tmp/.score_96_3.dta not found)
+(file .starlane/tmp/.score_96_4.dta not found)
+(file .starlane/tmp/.score_97_1.dta not found)
+(file .starlane/tmp/.score_97_2.dta not found)
+(file .starlane/tmp/.score_97_3.dta not found)
+(file .starlane/tmp/.score_97_4.dta not found)
+(file .starlane/tmp/.score_98_1.dta not found)
+(file .starlane/tmp/.score_98_2.dta not found)
+(file .starlane/tmp/.score_98_3.dta not found)
+(file .starlane/tmp/.score_98_4.dta not found)
+(file .starlane/tmp/.score_99_1.dta not found)
+(file .starlane/tmp/.score_99_2.dta not found)
+(file .starlane/tmp/.score_99_3.dta not found)
+(file .starlane/tmp/.score_99_4.dta not found)
+(file .starlane/tmp/.score_100_1.dta not found)
+(file .starlane/tmp/.score_100_2.dta not found)
+(file .starlane/tmp/.score_100_3.dta not found)
+(file .starlane/tmp/.score_100_4.dta not found)
+(file .starlane/tmp/.score_101_1.dta not found)
+(file .starlane/tmp/.score_101_2.dta not found)
+(file .starlane/tmp/.score_101_3.dta not found)
+(file .starlane/tmp/.score_101_4.dta not found)
+(file .starlane/tmp/.score_102_1.dta not found)
+(file .starlane/tmp/.score_102_2.dta not found)
+(file .starlane/tmp/.score_102_3.dta not found)
+(file .starlane/tmp/.score_102_4.dta not found)
+(file .starlane/tmp/.score_103_1.dta not found)
+(file .starlane/tmp/.score_103_2.dta not found)
+(file .starlane/tmp/.score_103_3.dta not found)
+(file .starlane/tmp/.score_103_4.dta not found)
+(file .starlane/tmp/.score_104_1.dta not found)
+(file .starlane/tmp/.score_104_2.dta not found)
+(file .starlane/tmp/.score_104_3.dta not found)
+(file .starlane/tmp/.score_104_4.dta not found)
+(file .starlane/tmp/.score_105_1.dta not found)
+(file .starlane/tmp/.score_105_2.dta not found)
+(file .starlane/tmp/.score_105_3.dta not found)
+(file .starlane/tmp/.score_105_4.dta not found)
+(file .starlane/tmp/.score_106_1.dta not found)
+(file .starlane/tmp/.score_106_2.dta not found)
+(file .starlane/tmp/.score_106_3.dta not found)
+(file .starlane/tmp/.score_106_4.dta not found)
+(file .starlane/tmp/.score_107_1.dta not found)
+(file .starlane/tmp/.score_107_2.dta not found)
+(file .starlane/tmp/.score_107_3.dta not found)
+(file .starlane/tmp/.score_107_4.dta not found)
+(file .starlane/tmp/.score_108_1.dta not found)
+(file .starlane/tmp/.score_108_2.dta not found)
+(file .starlane/tmp/.score_108_3.dta not found)
+(file .starlane/tmp/.score_108_4.dta not found)
+(file .starlane/tmp/.score_109_1.dta not found)
+(file .starlane/tmp/.score_109_2.dta not found)
+(file .starlane/tmp/.score_109_3.dta not found)
+(file .starlane/tmp/.score_109_4.dta not found)
+(file .starlane/tmp/.score_110_1.dta not found)
+(file .starlane/tmp/.score_110_2.dta not found)
+(file .starlane/tmp/.score_110_3.dta not found)
+(file .starlane/tmp/.score_110_4.dta not found)
+(file .starlane/tmp/.score_111_1.dta not found)
+(file .starlane/tmp/.score_111_2.dta not found)
+(file .starlane/tmp/.score_111_3.dta not found)
+(file .starlane/tmp/.score_111_4.dta not found)
+(file .starlane/tmp/.score_112_1.dta not found)
+(file .starlane/tmp/.score_112_2.dta not found)
+(file .starlane/tmp/.score_112_3.dta not found)
+(file .starlane/tmp/.score_112_4.dta not found)
+(file .starlane/tmp/.score_113_1.dta not found)
+(file .starlane/tmp/.score_113_2.dta not found)
+(file .starlane/tmp/.score_113_3.dta not found)
+(file .starlane/tmp/.score_113_4.dta not found)
+(file .starlane/tmp/.score_114_1.dta not found)
+(file .starlane/tmp/.score_114_2.dta not found)
+(file .starlane/tmp/.score_114_3.dta not found)
+(file .starlane/tmp/.score_114_4.dta not found)
+(file .starlane/tmp/.score_115_1.dta not found)
+(file .starlane/tmp/.score_115_2.dta not found)
+(file .starlane/tmp/.score_115_3.dta not found)
+(file .starlane/tmp/.score_115_4.dta not found)
+(file .starlane/tmp/.score_116_1.dta not found)
+(file .starlane/tmp/.score_116_2.dta not found)
+(file .starlane/tmp/.score_116_3.dta not found)
+(file .starlane/tmp/.score_116_4.dta not found)
+(file .starlane/tmp/.score_117_1.dta not found)
+(file .starlane/tmp/.score_117_2.dta not found)
+(file .starlane/tmp/.score_117_3.dta not found)
+(file .starlane/tmp/.score_117_4.dta not found)
+(file .starlane/tmp/.score_118_1.dta not found)
+(file .starlane/tmp/.score_118_2.dta not found)
+(file .starlane/tmp/.score_118_3.dta not found)
+(file .starlane/tmp/.score_118_4.dta not found)
+(file .starlane/tmp/.score_119_1.dta not found)
+(file .starlane/tmp/.score_119_2.dta not found)
+(file .starlane/tmp/.score_119_3.dta not found)
+(file .starlane/tmp/.score_119_4.dta not found)
+(file .starlane/tmp/.score_120_1.dta not found)
+(file .starlane/tmp/.score_120_2.dta not found)
+(file .starlane/tmp/.score_120_3.dta not found)
+(file .starlane/tmp/.score_120_4.dta not found)
+(file .starlane/tmp/.score_121_1.dta not found)
+(file .starlane/tmp/.score_121_2.dta not found)
+(file .starlane/tmp/.score_121_3.dta not found)
+(file .starlane/tmp/.score_121_4.dta not found)
+(file .starlane/tmp/.score_122_1.dta not found)
+(file .starlane/tmp/.score_122_2.dta not found)
+(file .starlane/tmp/.score_122_3.dta not found)
+(file .starlane/tmp/.score_122_4.dta not found)
+(file .starlane/tmp/.score_123_1.dta not found)
+(file .starlane/tmp/.score_123_2.dta not found)
+(file .starlane/tmp/.score_123_3.dta not found)
+(file .starlane/tmp/.score_123_4.dta not found)
+(file .starlane/tmp/.score_124_1.dta not found)
+(file .starlane/tmp/.score_124_2.dta not found)
+(file .starlane/tmp/.score_124_3.dta not found)
+(file .starlane/tmp/.score_124_4.dta not found)
+(file .starlane/tmp/.score_125_1.dta not found)
+(file .starlane/tmp/.score_125_2.dta not found)
+(file .starlane/tmp/.score_125_3.dta not found)
+(file .starlane/tmp/.score_125_4.dta not found)
+(file .starlane/tmp/.score_126_1.dta not found)
+(file .starlane/tmp/.score_126_2.dta not found)
+(file .starlane/tmp/.score_126_3.dta not found)
+(file .starlane/tmp/.score_126_4.dta not found)
+(file .starlane/tmp/.score_127_1.dta not found)
+(file .starlane/tmp/.score_127_2.dta not found)
+(file .starlane/tmp/.score_127_3.dta not found)
+(file .starlane/tmp/.score_127_4.dta not found)
+(file .starlane/tmp/.score_128_1.dta not found)
+(file .starlane/tmp/.score_128_2.dta not found)
+(file .starlane/tmp/.score_128_3.dta not found)
+(file .starlane/tmp/.score_128_4.dta not found)
+(file .starlane/tmp/.score_129_1.dta not found)
+(file .starlane/tmp/.score_129_2.dta not found)
+(file .starlane/tmp/.score_129_3.dta not found)
+(file .starlane/tmp/.score_129_4.dta not found)
+(file .starlane/tmp/.score_130_1.dta not found)
+(file .starlane/tmp/.score_130_2.dta not found)
+(file .starlane/tmp/.score_130_3.dta not found)
+(file .starlane/tmp/.score_130_4.dta not found)
+(file .starlane/tmp/.score_131_1.dta not found)
+(file .starlane/tmp/.score_131_2.dta not found)
+(file .starlane/tmp/.score_131_3.dta not found)
+(file .starlane/tmp/.score_131_4.dta not found)
+(file .starlane/tmp/.score_132_1.dta not found)
+(file .starlane/tmp/.score_132_2.dta not found)
+(file .starlane/tmp/.score_132_3.dta not found)
+(file .starlane/tmp/.score_132_4.dta not found)
+(file .starlane/tmp/.score_133_1.dta not found)
+(file .starlane/tmp/.score_133_2.dta not found)
+(file .starlane/tmp/.score_133_3.dta not found)
+(file .starlane/tmp/.score_133_4.dta not found)
+(file .starlane/tmp/.score_134_1.dta not found)
+(file .starlane/tmp/.score_134_2.dta not found)
+(file .starlane/tmp/.score_134_3.dta not found)
+(file .starlane/tmp/.score_134_4.dta not found)
+(file .starlane/tmp/.score_135_1.dta not found)
+(file .starlane/tmp/.score_135_2.dta not found)
+(file .starlane/tmp/.score_135_3.dta not found)
+(file .starlane/tmp/.score_135_4.dta not found)
+(file .starlane/tmp/.score_136_1.dta not found)
+(file .starlane/tmp/.score_136_2.dta not found)
+(file .starlane/tmp/.score_136_3.dta not found)
+(file .starlane/tmp/.score_136_4.dta not found)
+(file .starlane/tmp/.score_137_1.dta not found)
+(file .starlane/tmp/.score_137_2.dta not found)
+(file .starlane/tmp/.score_137_3.dta not found)
+(file .starlane/tmp/.score_137_4.dta not found)
+(file .starlane/tmp/.score_138_1.dta not found)
+(file .starlane/tmp/.score_138_2.dta not found)
+(file .starlane/tmp/.score_138_3.dta not found)
+(file .starlane/tmp/.score_138_4.dta not found)
+(file .starlane/tmp/.score_139_1.dta not found)
+(file .starlane/tmp/.score_139_2.dta not found)
+(file .starlane/tmp/.score_139_3.dta not found)
+(file .starlane/tmp/.score_139_4.dta not found)
+(file .starlane/tmp/.score_140_1.dta not found)
+(file .starlane/tmp/.score_140_2.dta not found)
+(file .starlane/tmp/.score_140_3.dta not found)
+(file .starlane/tmp/.score_140_4.dta not found)
+(file .starlane/tmp/.score_141_1.dta not found)
+(file .starlane/tmp/.score_141_2.dta not found)
+(file .starlane/tmp/.score_141_3.dta not found)
+(file .starlane/tmp/.score_141_4.dta not found)
+(file .starlane/tmp/.score_142_1.dta not found)
+(file .starlane/tmp/.score_142_2.dta not found)
+(file .starlane/tmp/.score_142_3.dta not found)
+(file .starlane/tmp/.score_142_4.dta not found)
+(file .starlane/tmp/.score_143_1.dta not found)
+(file .starlane/tmp/.score_143_2.dta not found)
+(file .starlane/tmp/.score_143_3.dta not found)
+(file .starlane/tmp/.score_143_4.dta not found)
+(file .starlane/tmp/.score_144_1.dta not found)
+(file .starlane/tmp/.score_144_2.dta not found)
+(file .starlane/tmp/.score_144_3.dta not found)
+(file .starlane/tmp/.score_144_4.dta not found)
+(file .starlane/tmp/.score_145_1.dta not found)
+(file .starlane/tmp/.score_145_2.dta not found)
+(file .starlane/tmp/.score_145_3.dta not found)
+(file .starlane/tmp/.score_145_4.dta not found)
+(file .starlane/tmp/.score_146_1.dta not found)
+(file .starlane/tmp/.score_146_2.dta not found)
+(file .starlane/tmp/.score_146_3.dta not found)
+(file .starlane/tmp/.score_146_4.dta not found)
+(file .starlane/tmp/.score_147_1.dta not found)
+(file .starlane/tmp/.score_147_2.dta not found)
+(file .starlane/tmp/.score_147_3.dta not found)
+(file .starlane/tmp/.score_147_4.dta not found)
+(file .starlane/tmp/.score_148_1.dta not found)
+(file .starlane/tmp/.score_148_2.dta not found)
+(file .starlane/tmp/.score_148_3.dta not found)
+(file .starlane/tmp/.score_148_4.dta not found)
+(file .starlane/tmp/.score_149_1.dta not found)
+(file .starlane/tmp/.score_149_2.dta not found)
+(file .starlane/tmp/.score_149_3.dta not found)
+(file .starlane/tmp/.score_149_4.dta not found)
+(file .starlane/tmp/.score_150_1.dta not found)
+(file .starlane/tmp/.score_150_2.dta not found)
+(file .starlane/tmp/.score_150_3.dta not found)
+(file .starlane/tmp/.score_150_4.dta not found)
+(file .starlane/tmp/.score_151_1.dta not found)
+(file .starlane/tmp/.score_151_2.dta not found)
+(file .starlane/tmp/.score_151_3.dta not found)
+(file .starlane/tmp/.score_151_4.dta not found)
+(file .starlane/tmp/.score_152_1.dta not found)
+(file .starlane/tmp/.score_152_2.dta not found)
+(file .starlane/tmp/.score_152_3.dta not found)
+(file .starlane/tmp/.score_152_4.dta not found)
+(file .starlane/tmp/.score_153_1.dta not found)
+(file .starlane/tmp/.score_153_2.dta not found)
+(file .starlane/tmp/.score_153_3.dta not found)
+(file .starlane/tmp/.score_153_4.dta not found)
+(file .starlane/tmp/.score_154_1.dta not found)
+(file .starlane/tmp/.score_154_2.dta not found)
+(file .starlane/tmp/.score_154_3.dta not found)
+(file .starlane/tmp/.score_154_4.dta not found)
+(file .starlane/tmp/.score_155_1.dta not found)
+(file .starlane/tmp/.score_155_2.dta not found)
+(file .starlane/tmp/.score_155_3.dta not found)
+(file .starlane/tmp/.score_155_4.dta not found)
+(file .starlane/tmp/.score_156_1.dta not found)
+(file .starlane/tmp/.score_156_2.dta not found)
+(file .starlane/tmp/.score_156_3.dta not found)
+(file .starlane/tmp/.score_156_4.dta not found)
+(file .starlane/tmp/.score_157_1.dta not found)
+(file .starlane/tmp/.score_157_2.dta not found)
+(file .starlane/tmp/.score_157_3.dta not found)
+(file .starlane/tmp/.score_157_4.dta not found)
+(file .starlane/tmp/.score_158_1.dta not found)
+(file .starlane/tmp/.score_158_2.dta not found)
+(file .starlane/tmp/.score_158_3.dta not found)
+(file .starlane/tmp/.score_158_4.dta not found)
+(file .starlane/tmp/.score_159_1.dta not found)
+(file .starlane/tmp/.score_159_2.dta not found)
+(file .starlane/tmp/.score_159_3.dta not found)
+(file .starlane/tmp/.score_159_4.dta not found)
+(file .starlane/tmp/.score_160_1.dta not found)
+(file .starlane/tmp/.score_160_2.dta not found)
+(file .starlane/tmp/.score_160_3.dta not found)
+(file .starlane/tmp/.score_160_4.dta not found)
+(file .starlane/tmp/.score_161_1.dta not found)
+(file .starlane/tmp/.score_161_2.dta not found)
+(file .starlane/tmp/.score_161_3.dta not found)
+(file .starlane/tmp/.score_161_4.dta not found)
+(file .starlane/tmp/.score_162_1.dta not found)
+(file .starlane/tmp/.score_162_2.dta not found)
+(file .starlane/tmp/.score_162_3.dta not found)
+(file .starlane/tmp/.score_162_4.dta not found)
+(file .starlane/tmp/.score_163_1.dta not found)
+(file .starlane/tmp/.score_163_2.dta not found)
+(file .starlane/tmp/.score_163_3.dta not found)
+(file .starlane/tmp/.score_163_4.dta not found)
+(file .starlane/tmp/.score_164_1.dta not found)
+(file .starlane/tmp/.score_164_2.dta not found)
+(file .starlane/tmp/.score_164_3.dta not found)
+(file .starlane/tmp/.score_164_4.dta not found)
+(file .starlane/tmp/.score_165_1.dta not found)
+(file .starlane/tmp/.score_165_2.dta not found)
+(file .starlane/tmp/.score_165_3.dta not found)
+(file .starlane/tmp/.score_165_4.dta not found)
+(file .starlane/tmp/.score_166_1.dta not found)
+(file .starlane/tmp/.score_166_2.dta not found)
+(file .starlane/tmp/.score_166_3.dta not found)
+(file .starlane/tmp/.score_166_4.dta not found)
+(file .starlane/tmp/.score_167_1.dta not found)
+(file .starlane/tmp/.score_167_2.dta not found)
+(file .starlane/tmp/.score_167_3.dta not found)
+(file .starlane/tmp/.score_167_4.dta not found)
+(file .starlane/tmp/.score_168_1.dta not found)
+(file .starlane/tmp/.score_168_2.dta not found)
+(file .starlane/tmp/.score_168_3.dta not found)
+(file .starlane/tmp/.score_168_4.dta not found)
+(file .starlane/tmp/.score_169_1.dta not found)
+(file .starlane/tmp/.score_169_2.dta not found)
+(file .starlane/tmp/.score_169_3.dta not found)
+(file .starlane/tmp/.score_169_4.dta not found)
+(file .starlane/tmp/.score_170_1.dta not found)
+(file .starlane/tmp/.score_170_2.dta not found)
+(file .starlane/tmp/.score_170_3.dta not found)
+(file .starlane/tmp/.score_170_4.dta not found)
+(file .starlane/tmp/.score_171_1.dta not found)
+(file .starlane/tmp/.score_171_2.dta not found)
+(file .starlane/tmp/.score_171_3.dta not found)
+(file .starlane/tmp/.score_171_4.dta not found)
+(file .starlane/tmp/.score_172_1.dta not found)
+(file .starlane/tmp/.score_172_2.dta not found)
+(file .starlane/tmp/.score_172_3.dta not found)
+(file .starlane/tmp/.score_172_4.dta not found)
+(file .starlane/tmp/.score_173_1.dta not found)
+(file .starlane/tmp/.score_173_2.dta not found)
+(file .starlane/tmp/.score_173_3.dta not found)
+(file .starlane/tmp/.score_173_4.dta not found)
+(file .starlane/tmp/.score_174_1.dta not found)
+(file .starlane/tmp/.score_174_2.dta not found)
+(file .starlane/tmp/.score_174_3.dta not found)
+(file .starlane/tmp/.score_174_4.dta not found)
+(file .starlane/tmp/.score_175_1.dta not found)
+(file .starlane/tmp/.score_175_2.dta not found)
+(file .starlane/tmp/.score_175_3.dta not found)
+(file .starlane/tmp/.score_175_4.dta not found)
+(file .starlane/tmp/.score_176_1.dta not found)
+(file .starlane/tmp/.score_176_2.dta not found)
+(file .starlane/tmp/.score_176_3.dta not found)
+(file .starlane/tmp/.score_176_4.dta not found)
+(file .starlane/tmp/.score_177_1.dta not found)
+(file .starlane/tmp/.score_177_2.dta not found)
+(file .starlane/tmp/.score_177_3.dta not found)
+(file .starlane/tmp/.score_177_4.dta not found)
+(file .starlane/tmp/.score_178_1.dta not found)
+(file .starlane/tmp/.score_178_2.dta not found)
+(file .starlane/tmp/.score_178_3.dta not found)
+(file .starlane/tmp/.score_178_4.dta not found)
+(file .starlane/tmp/.score_179_1.dta not found)
+(file .starlane/tmp/.score_179_2.dta not found)
+(file .starlane/tmp/.score_179_3.dta not found)
+(file .starlane/tmp/.score_179_4.dta not found)
+(file .starlane/tmp/.score_180_1.dta not found)
+(file .starlane/tmp/.score_180_2.dta not found)
+(file .starlane/tmp/.score_180_3.dta not found)
+(file .starlane/tmp/.score_180_4.dta not found)
+(file .starlane/tmp/.score_181_1.dta not found)
+(file .starlane/tmp/.score_181_2.dta not found)
+(file .starlane/tmp/.score_181_3.dta not found)
+(file .starlane/tmp/.score_181_4.dta not found)
+(file .starlane/tmp/.score_182_1.dta not found)
+(file .starlane/tmp/.score_182_2.dta not found)
+(file .starlane/tmp/.score_182_3.dta not found)
+(file .starlane/tmp/.score_182_4.dta not found)
+(file .starlane/tmp/.score_183_1.dta not found)
+(file .starlane/tmp/.score_183_2.dta not found)
+(file .starlane/tmp/.score_183_3.dta not found)
+(file .starlane/tmp/.score_183_4.dta not found)
+(file .starlane/tmp/.score_184_1.dta not found)
+(file .starlane/tmp/.score_184_2.dta not found)
+(file .starlane/tmp/.score_184_3.dta not found)
+(file .starlane/tmp/.score_184_4.dta not found)
+(file .starlane/tmp/.score_185_1.dta not found)
+(file .starlane/tmp/.score_185_2.dta not found)
+(file .starlane/tmp/.score_185_3.dta not found)
+(file .starlane/tmp/.score_185_4.dta not found)
+(file .starlane/tmp/.score_186_1.dta not found)
+(file .starlane/tmp/.score_186_2.dta not found)
+(file .starlane/tmp/.score_186_3.dta not found)
+(file .starlane/tmp/.score_186_4.dta not found)
+(file .starlane/tmp/.score_187_1.dta not found)
+(file .starlane/tmp/.score_187_2.dta not found)
+(file .starlane/tmp/.score_187_3.dta not found)
+(file .starlane/tmp/.score_187_4.dta not found)
+(file .starlane/tmp/.score_188_1.dta not found)
+(file .starlane/tmp/.score_188_2.dta not found)
+(file .starlane/tmp/.score_188_3.dta not found)
+(file .starlane/tmp/.score_188_4.dta not found)
+(file .starlane/tmp/.score_189_1.dta not found)
+(file .starlane/tmp/.score_189_2.dta not found)
+(file .starlane/tmp/.score_189_3.dta not found)
+(file .starlane/tmp/.score_189_4.dta not found)
+(file .starlane/tmp/.score_190_1.dta not found)
+(file .starlane/tmp/.score_190_2.dta not found)
+(file .starlane/tmp/.score_190_3.dta not found)
+(file .starlane/tmp/.score_190_4.dta not found)
+(file .starlane/tmp/.score_191_1.dta not found)
+(file .starlane/tmp/.score_191_2.dta not found)
+(file .starlane/tmp/.score_191_3.dta not found)
+(file .starlane/tmp/.score_191_4.dta not found)
+(file .starlane/tmp/.score_192_1.dta not found)
+(file .starlane/tmp/.score_192_2.dta not found)
+(file .starlane/tmp/.score_192_3.dta not found)
+(file .starlane/tmp/.score_192_4.dta not found)
+(file .starlane/tmp/.score_193_1.dta not found)
+(file .starlane/tmp/.score_193_2.dta not found)
+(file .starlane/tmp/.score_193_3.dta not found)
+(file .starlane/tmp/.score_193_4.dta not found)
+(file .starlane/tmp/.score_194_1.dta not found)
+(file .starlane/tmp/.score_194_2.dta not found)
+(file .starlane/tmp/.score_194_3.dta not found)
+(file .starlane/tmp/.score_194_4.dta not found)
+(file .starlane/tmp/.score_195_1.dta not found)
+(file .starlane/tmp/.score_195_2.dta not found)
+(file .starlane/tmp/.score_195_3.dta not found)
+(file .starlane/tmp/.score_195_4.dta not found)
+(file .starlane/tmp/.score_196_1.dta not found)
+(file .starlane/tmp/.score_196_2.dta not found)
+(file .starlane/tmp/.score_196_3.dta not found)
+(file .starlane/tmp/.score_196_4.dta not found)
+(file .starlane/tmp/.score_197_1.dta not found)
+(file .starlane/tmp/.score_197_2.dta not found)
+(file .starlane/tmp/.score_197_3.dta not found)
+(file .starlane/tmp/.score_197_4.dta not found)
+(file .starlane/tmp/.score_198_1.dta not found)
+(file .starlane/tmp/.score_198_2.dta not found)
+(file .starlane/tmp/.score_198_3.dta not found)
+(file .starlane/tmp/.score_198_4.dta not found)
+(file .starlane/tmp/.score_199_1.dta not found)
+(file .starlane/tmp/.score_199_2.dta not found)
+(file .starlane/tmp/.score_199_3.dta not found)
+(file .starlane/tmp/.score_199_4.dta not found)
+(file .starlane/tmp/.score_200_1.dta not found)
+(file .starlane/tmp/.score_200_2.dta not found)
+(file .starlane/tmp/.score_200_3.dta not found)
+(file .starlane/tmp/.score_200_4.dta not found)
+(file .starlane/tmp/.score_201_1.dta not found)
+(file .starlane/tmp/.score_201_2.dta not found)
+(file .starlane/tmp/.score_201_3.dta not found)
+(file .starlane/tmp/.score_201_4.dta not found)
+(file .starlane/tmp/.score_202_1.dta not found)
+(file .starlane/tmp/.score_202_2.dta not found)
+(file .starlane/tmp/.score_202_3.dta not found)
+(file .starlane/tmp/.score_202_4.dta not found)
+(file .starlane/tmp/.score_203_1.dta not found)
+(file .starlane/tmp/.score_203_2.dta not found)
+(file .starlane/tmp/.score_203_3.dta not found)
+(file .starlane/tmp/.score_203_4.dta not found)
+(file .starlane/tmp/.score_204_1.dta not found)
+(file .starlane/tmp/.score_204_2.dta not found)
+(file .starlane/tmp/.score_204_3.dta not found)
+(file .starlane/tmp/.score_204_4.dta not found)
+(file .starlane/tmp/.score_205_1.dta not found)
+(file .starlane/tmp/.score_205_2.dta not found)
+(file .starlane/tmp/.score_205_3.dta not found)
+(file .starlane/tmp/.score_205_4.dta not found)
+(file .starlane/tmp/.score_206_1.dta not found)
+(file .starlane/tmp/.score_206_2.dta not found)
+(file .starlane/tmp/.score_206_3.dta not found)
+(file .starlane/tmp/.score_206_4.dta not found)
+(file .starlane/tmp/.score_207_1.dta not found)
+(file .starlane/tmp/.score_207_2.dta not found)
+(file .starlane/tmp/.score_207_3.dta not found)
+(file .starlane/tmp/.score_207_4.dta not found)
+(file .starlane/tmp/.score_208_1.dta not found)
+(file .starlane/tmp/.score_208_2.dta not found)
+(file .starlane/tmp/.score_208_3.dta not found)
+(file .starlane/tmp/.score_208_4.dta not found)
+(file .starlane/tmp/.score_209_1.dta not found)
+(file .starlane/tmp/.score_209_2.dta not found)
+(file .starlane/tmp/.score_209_3.dta not found)
+(file .starlane/tmp/.score_209_4.dta not found)
+(file .starlane/tmp/.score_210_1.dta not found)
+(file .starlane/tmp/.score_210_2.dta not found)
+(file .starlane/tmp/.score_210_3.dta not found)
+(file .starlane/tmp/.score_210_4.dta not found)
+(file .starlane/tmp/.score_211_1.dta not found)
+(file .starlane/tmp/.score_211_2.dta not found)
+(file .starlane/tmp/.score_211_3.dta not found)
+(file .starlane/tmp/.score_211_4.dta not found)
+(file .starlane/tmp/.score_212_1.dta not found)
+(file .starlane/tmp/.score_212_2.dta not found)
+(file .starlane/tmp/.score_212_3.dta not found)
+(file .starlane/tmp/.score_212_4.dta not found)
+(file .starlane/tmp/.score_213_1.dta not found)
+(file .starlane/tmp/.score_213_2.dta not found)
+(file .starlane/tmp/.score_213_3.dta not found)
+(file .starlane/tmp/.score_213_4.dta not found)
+(file .starlane/tmp/.score_214_1.dta not found)
+(file .starlane/tmp/.score_214_2.dta not found)
+(file .starlane/tmp/.score_214_3.dta not found)
+(file .starlane/tmp/.score_214_4.dta not found)
+(file .starlane/tmp/.score_215_1.dta not found)
+(file .starlane/tmp/.score_215_2.dta not found)
+(file .starlane/tmp/.score_215_3.dta not found)
+(file .starlane/tmp/.score_215_4.dta not found)
+(file .starlane/tmp/.score_216_1.dta not found)
+(file .starlane/tmp/.score_216_2.dta not found)
+(file .starlane/tmp/.score_216_3.dta not found)
+(file .starlane/tmp/.score_216_4.dta not found)
+(file .starlane/tmp/.score_217_1.dta not found)
+(file .starlane/tmp/.score_217_2.dta not found)
+(file .starlane/tmp/.score_217_3.dta not found)
+(file .starlane/tmp/.score_217_4.dta not found)
+(file .starlane/tmp/.score_218_1.dta not found)
+(file .starlane/tmp/.score_218_2.dta not found)
+(file .starlane/tmp/.score_218_3.dta not found)
+(file .starlane/tmp/.score_218_4.dta not found)
+(file .starlane/tmp/.score_219_1.dta not found)
+(file .starlane/tmp/.score_219_2.dta not found)
+(file .starlane/tmp/.score_219_3.dta not found)
+(file .starlane/tmp/.score_219_4.dta not found)
+(file .starlane/tmp/.score_220_1.dta not found)
+(file .starlane/tmp/.score_220_2.dta not found)
+(file .starlane/tmp/.score_220_3.dta not found)
+(file .starlane/tmp/.score_220_4.dta not found)
+(file .starlane/tmp/.score_221_1.dta not found)
+(file .starlane/tmp/.score_221_2.dta not found)
+(file .starlane/tmp/.score_221_3.dta not found)
+(file .starlane/tmp/.score_221_4.dta not found)
+(file .starlane/tmp/.score_222_1.dta not found)
+(file .starlane/tmp/.score_222_2.dta not found)
+(file .starlane/tmp/.score_222_3.dta not found)
+(file .starlane/tmp/.score_222_4.dta not found)
+(file .starlane/tmp/.score_223_1.dta not found)
+(file .starlane/tmp/.score_223_2.dta not found)
+(file .starlane/tmp/.score_223_3.dta not found)
+(file .starlane/tmp/.score_223_4.dta not found)
+(file .starlane/tmp/.score_224_1.dta not found)
+(file .starlane/tmp/.score_224_2.dta not found)
+(file .starlane/tmp/.score_224_3.dta not found)
+(file .starlane/tmp/.score_224_4.dta not found)
+(file .starlane/tmp/.score_225_1.dta not found)
+(file .starlane/tmp/.score_225_2.dta not found)
+(file .starlane/tmp/.score_225_3.dta not found)
+(file .starlane/tmp/.score_225_4.dta not found)
+(file .starlane/tmp/.score_226_1.dta not found)
+(file .starlane/tmp/.score_226_2.dta not found)
+(file .starlane/tmp/.score_226_3.dta not found)
+(file .starlane/tmp/.score_226_4.dta not found)
+(file .starlane/tmp/.score_227_1.dta not found)
+(file .starlane/tmp/.score_227_2.dta not found)
+(file .starlane/tmp/.score_227_3.dta not found)
+(file .starlane/tmp/.score_227_4.dta not found)
+(file .starlane/tmp/.score_228_1.dta not found)
+(file .starlane/tmp/.score_228_2.dta not found)
+(file .starlane/tmp/.score_228_3.dta not found)
+(file .starlane/tmp/.score_228_4.dta not found)
+(file .starlane/tmp/.score_229_1.dta not found)
+(file .starlane/tmp/.score_229_2.dta not found)
+(file .starlane/tmp/.score_229_3.dta not found)
+(file .starlane/tmp/.score_229_4.dta not found)
+(file .starlane/tmp/.score_230_1.dta not found)
+(file .starlane/tmp/.score_230_2.dta not found)
+(file .starlane/tmp/.score_230_3.dta not found)
+(file .starlane/tmp/.score_230_4.dta not found)
+(file .starlane/tmp/.score_231_1.dta not found)
+(file .starlane/tmp/.score_231_2.dta not found)
+(file .starlane/tmp/.score_231_3.dta not found)
+(file .starlane/tmp/.score_231_4.dta not found)
+(file .starlane/tmp/.score_232_1.dta not found)
+(file .starlane/tmp/.score_232_2.dta not found)
+(file .starlane/tmp/.score_232_3.dta not found)
+(file .starlane/tmp/.score_232_4.dta not found)
+(file .starlane/tmp/.score_233_1.dta not found)
+(file .starlane/tmp/.score_233_2.dta not found)
+(file .starlane/tmp/.score_233_3.dta not found)
+(file .starlane/tmp/.score_233_4.dta not found)
+(file .starlane/tmp/.score_234_1.dta not found)
+(file .starlane/tmp/.score_234_2.dta not found)
+(file .starlane/tmp/.score_234_3.dta not found)
+(file .starlane/tmp/.score_234_4.dta not found)
+(file .starlane/tmp/.score_235_1.dta not found)
+(file .starlane/tmp/.score_235_2.dta not found)
+(file .starlane/tmp/.score_235_3.dta not found)
+(file .starlane/tmp/.score_235_4.dta not found)
+(file .starlane/tmp/.score_236_1.dta not found)
+(file .starlane/tmp/.score_236_2.dta not found)
+(file .starlane/tmp/.score_236_3.dta not found)
+(file .starlane/tmp/.score_236_4.dta not found)
+(file .starlane/tmp/.score_237_1.dta not found)
+(file .starlane/tmp/.score_237_2.dta not found)
+(file .starlane/tmp/.score_237_3.dta not found)
+(file .starlane/tmp/.score_237_4.dta not found)
+(file .starlane/tmp/.score_238_1.dta not found)
+(file .starlane/tmp/.score_238_2.dta not found)
+(file .starlane/tmp/.score_238_3.dta not found)
+(file .starlane/tmp/.score_238_4.dta not found)
+(file .starlane/tmp/.score_239_1.dta not found)
+(file .starlane/tmp/.score_239_2.dta not found)
+(file .starlane/tmp/.score_239_3.dta not found)
+(file .starlane/tmp/.score_239_4.dta not found)
+(file .starlane/tmp/.score_240_1.dta not found)
+(file .starlane/tmp/.score_240_2.dta not found)
+(file .starlane/tmp/.score_240_3.dta not found)
+(file .starlane/tmp/.score_240_4.dta not found)
+(file .starlane/tmp/.score_241_1.dta not found)
+(file .starlane/tmp/.score_241_2.dta not found)
+(file .starlane/tmp/.score_241_3.dta not found)
+(file .starlane/tmp/.score_241_4.dta not found)
+(file .starlane/tmp/.score_242_1.dta not found)
+(file .starlane/tmp/.score_242_2.dta not found)
+(file .starlane/tmp/.score_242_3.dta not found)
+(file .starlane/tmp/.score_242_4.dta not found)
+(file .starlane/tmp/.score_243_1.dta not found)
+(file .starlane/tmp/.score_243_2.dta not found)
+(file .starlane/tmp/.score_243_3.dta not found)
+(file .starlane/tmp/.score_243_4.dta not found)
+(file .starlane/tmp/.score_244_1.dta not found)
+(file .starlane/tmp/.score_244_2.dta not found)
+(file .starlane/tmp/.score_244_3.dta not found)
+(file .starlane/tmp/.score_244_4.dta not found)
+(file .starlane/tmp/.score_245_1.dta not found)
+(file .starlane/tmp/.score_245_2.dta not found)
+(file .starlane/tmp/.score_245_3.dta not found)
+(file .starlane/tmp/.score_245_4.dta not found)
+(file .starlane/tmp/.score_246_1.dta not found)
+(file .starlane/tmp/.score_246_2.dta not found)
+(file .starlane/tmp/.score_246_3.dta not found)
+(file .starlane/tmp/.score_246_4.dta not found)
+(file .starlane/tmp/.score_247_1.dta not found)
+(file .starlane/tmp/.score_247_2.dta not found)
+(file .starlane/tmp/.score_247_3.dta not found)
+(file .starlane/tmp/.score_247_4.dta not found)
+(file .starlane/tmp/.score_248_1.dta not found)
+(file .starlane/tmp/.score_248_2.dta not found)
+(file .starlane/tmp/.score_248_3.dta not found)
+(file .starlane/tmp/.score_248_4.dta not found)
+(file .starlane/tmp/.score_249_1.dta not found)
+(file .starlane/tmp/.score_249_2.dta not found)
+(file .starlane/tmp/.score_249_3.dta not found)
+(file .starlane/tmp/.score_249_4.dta not found)
+(file .starlane/tmp/.score_250_1.dta not found)
+(file .starlane/tmp/.score_250_2.dta not found)
+(file .starlane/tmp/.score_250_3.dta not found)
+(file .starlane/tmp/.score_250_4.dta not found)
+(file .starlane/tmp/.score_251_1.dta not found)
+(file .starlane/tmp/.score_251_2.dta not found)
+(file .starlane/tmp/.score_251_3.dta not found)
+(file .starlane/tmp/.score_251_4.dta not found)
+(file .starlane/tmp/.score_252_1.dta not found)
+(file .starlane/tmp/.score_252_2.dta not found)
+(file .starlane/tmp/.score_252_3.dta not found)
+(file .starlane/tmp/.score_252_4.dta not found)
+(file .starlane/tmp/.score_253_1.dta not found)
+(file .starlane/tmp/.score_253_2.dta not found)
+(file .starlane/tmp/.score_253_3.dta not found)
+(file .starlane/tmp/.score_253_4.dta not found)
+(file .starlane/tmp/.score_254_1.dta not found)
+(file .starlane/tmp/.score_254_2.dta not found)
+(file .starlane/tmp/.score_254_3.dta not found)
+(file .starlane/tmp/.score_254_4.dta not found)
+(file .starlane/tmp/.score_255_1.dta not found)
+(file .starlane/tmp/.score_255_2.dta not found)
+(file .starlane/tmp/.score_255_3.dta not found)
+(file .starlane/tmp/.score_255_4.dta not found)
+(file .starlane/tmp/.score_256_1.dta not found)
+(file .starlane/tmp/.score_256_2.dta not found)
+(file .starlane/tmp/.score_256_3.dta not found)
+(file .starlane/tmp/.score_256_4.dta not found)
+(file .starlane/tmp/.score_257_1.dta not found)
+(file .starlane/tmp/.score_257_2.dta not found)
+(file .starlane/tmp/.score_257_3.dta not found)
+(file .starlane/tmp/.score_257_4.dta not found)
+(file .starlane/tmp/.score_258_1.dta not found)
+(file .starlane/tmp/.score_258_2.dta not found)
+(file .starlane/tmp/.score_258_3.dta not found)
+(file .starlane/tmp/.score_258_4.dta not found)
+(file .starlane/tmp/.score_259_1.dta not found)
+(file .starlane/tmp/.score_259_2.dta not found)
+(file .starlane/tmp/.score_259_3.dta not found)
+(file .starlane/tmp/.score_259_4.dta not found)
+(file .starlane/tmp/.score_260_1.dta not found)
+(file .starlane/tmp/.score_260_2.dta not found)
+(file .starlane/tmp/.score_260_3.dta not found)
+(file .starlane/tmp/.score_260_4.dta not found)
+(file .starlane/tmp/.score_261_1.dta not found)
+(file .starlane/tmp/.score_261_2.dta not found)
+(file .starlane/tmp/.score_261_3.dta not found)
+(file .starlane/tmp/.score_261_4.dta not found)
+(file .starlane/tmp/.score_262_1.dta not found)
+(file .starlane/tmp/.score_262_2.dta not found)
+(file .starlane/tmp/.score_262_3.dta not found)
+(file .starlane/tmp/.score_262_4.dta not found)
+(file .starlane/tmp/.score_263_1.dta not found)
+(file .starlane/tmp/.score_263_2.dta not found)
+(file .starlane/tmp/.score_263_3.dta not found)
+(file .starlane/tmp/.score_263_4.dta not found)
+(file .starlane/tmp/.score_264_1.dta not found)
+(file .starlane/tmp/.score_264_2.dta not found)
+(file .starlane/tmp/.score_264_3.dta not found)
+(file .starlane/tmp/.score_264_4.dta not found)
+(file .starlane/tmp/.score_265_1.dta not found)
+(file .starlane/tmp/.score_265_2.dta not found)
+(file .starlane/tmp/.score_265_3.dta not found)
+(file .starlane/tmp/.score_265_4.dta not found)
+(file .starlane/tmp/.score_266_1.dta not found)
+(file .starlane/tmp/.score_266_2.dta not found)
+(file .starlane/tmp/.score_266_3.dta not found)
+(file .starlane/tmp/.score_266_4.dta not found)
+(file .starlane/tmp/.score_267_1.dta not found)
+(file .starlane/tmp/.score_267_2.dta not found)
+(file .starlane/tmp/.score_267_3.dta not found)
+(file .starlane/tmp/.score_267_4.dta not found)
+(file .starlane/tmp/.score_268_1.dta not found)
+(file .starlane/tmp/.score_268_2.dta not found)
+(file .starlane/tmp/.score_268_3.dta not found)
+(file .starlane/tmp/.score_268_4.dta not found)
+(file .starlane/tmp/.score_269_1.dta not found)
+(file .starlane/tmp/.score_269_2.dta not found)
+(file .starlane/tmp/.score_269_3.dta not found)
+(file .starlane/tmp/.score_269_4.dta not found)
+(file .starlane/tmp/.score_270_1.dta not found)
+(file .starlane/tmp/.score_270_2.dta not found)
+(file .starlane/tmp/.score_270_3.dta not found)
+(file .starlane/tmp/.score_270_4.dta not found)
+(file .starlane/tmp/.score_271_1.dta not found)
+(file .starlane/tmp/.score_271_2.dta not found)
+(file .starlane/tmp/.score_271_3.dta not found)
+(file .starlane/tmp/.score_271_4.dta not found)
+(file .starlane/tmp/.score_272_1.dta not found)
+(file .starlane/tmp/.score_272_2.dta not found)
+(file .starlane/tmp/.score_272_3.dta not found)
+(file .starlane/tmp/.score_272_4.dta not found)
+(file .starlane/tmp/.score_273_1.dta not found)
+(file .starlane/tmp/.score_273_2.dta not found)
+(file .starlane/tmp/.score_273_3.dta not found)
+(file .starlane/tmp/.score_273_4.dta not found)
+(file .starlane/tmp/.score_274_1.dta not found)
+(file .starlane/tmp/.score_274_2.dta not found)
+(file .starlane/tmp/.score_274_3.dta not found)
+(file .starlane/tmp/.score_274_4.dta not found)
+(file .starlane/tmp/.score_275_1.dta not found)
+(file .starlane/tmp/.score_275_2.dta not found)
+(file .starlane/tmp/.score_275_3.dta not found)
+(file .starlane/tmp/.score_275_4.dta not found)
+(file .starlane/tmp/.score_276_1.dta not found)
+(file .starlane/tmp/.score_276_2.dta not found)
+(file .starlane/tmp/.score_276_3.dta not found)
+(file .starlane/tmp/.score_276_4.dta not found)
+(file .starlane/tmp/.score_277_1.dta not found)
+(file .starlane/tmp/.score_277_2.dta not found)
+(file .starlane/tmp/.score_277_3.dta not found)
+(file .starlane/tmp/.score_277_4.dta not found)
+(file .starlane/tmp/.score_278_1.dta not found)
+(file .starlane/tmp/.score_278_2.dta not found)
+(file .starlane/tmp/.score_278_3.dta not found)
+(file .starlane/tmp/.score_278_4.dta not found)
+(file .starlane/tmp/.score_279_1.dta not found)
+(file .starlane/tmp/.score_279_2.dta not found)
+(file .starlane/tmp/.score_279_3.dta not found)
+(file .starlane/tmp/.score_279_4.dta not found)
+(file .starlane/tmp/.score_280_1.dta not found)
+(file .starlane/tmp/.score_280_2.dta not found)
+(file .starlane/tmp/.score_280_3.dta not found)
+(file .starlane/tmp/.score_280_4.dta not found)
+(file .starlane/tmp/.score_281_1.dta not found)
+(file .starlane/tmp/.score_281_2.dta not found)
+(file .starlane/tmp/.score_281_3.dta not found)
+(file .starlane/tmp/.score_281_4.dta not found)
+(file .starlane/tmp/.score_282_1.dta not found)
+(file .starlane/tmp/.score_282_2.dta not found)
+(file .starlane/tmp/.score_282_3.dta not found)
+(file .starlane/tmp/.score_282_4.dta not found)
+(file .starlane/tmp/.score_283_1.dta not found)
+(file .starlane/tmp/.score_283_2.dta not found)
+(file .starlane/tmp/.score_283_3.dta not found)
+(file .starlane/tmp/.score_283_4.dta not found)
+(file .starlane/tmp/.score_284_1.dta not found)
+(file .starlane/tmp/.score_284_2.dta not found)
+(file .starlane/tmp/.score_284_3.dta not found)
+(file .starlane/tmp/.score_284_4.dta not found)
+(file .starlane/tmp/.score_285_1.dta not found)
+(file .starlane/tmp/.score_285_2.dta not found)
+(file .starlane/tmp/.score_285_3.dta not found)
+(file .starlane/tmp/.score_285_4.dta not found)
+(file .starlane/tmp/.score_286_1.dta not found)
+(file .starlane/tmp/.score_286_2.dta not found)
+(file .starlane/tmp/.score_286_3.dta not found)
+(file .starlane/tmp/.score_286_4.dta not found)
+(file .starlane/tmp/.score_287_1.dta not found)
+(file .starlane/tmp/.score_287_2.dta not found)
+(file .starlane/tmp/.score_287_3.dta not found)
+(file .starlane/tmp/.score_287_4.dta not found)
+(file .starlane/tmp/.score_288_1.dta not found)
+(file .starlane/tmp/.score_288_2.dta not found)
+(file .starlane/tmp/.score_288_3.dta not found)
+(file .starlane/tmp/.score_288_4.dta not found)
+(file .starlane/tmp/.score_289_1.dta not found)
+(file .starlane/tmp/.score_289_2.dta not found)
+(file .starlane/tmp/.score_289_3.dta not found)
+(file .starlane/tmp/.score_289_4.dta not found)
+(file .starlane/tmp/.score_290_1.dta not found)
+(file .starlane/tmp/.score_290_2.dta not found)
+(file .starlane/tmp/.score_290_3.dta not found)
+(file .starlane/tmp/.score_290_4.dta not found)
