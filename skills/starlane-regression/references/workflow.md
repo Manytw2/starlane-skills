@@ -282,6 +282,28 @@ The summary stage enumerates control-variable subsets and VCE choices.
 - `vce_idx` identifies one VCE choice.
 - Final selection uses the same `cv_idx + vce_idx` pair from the current `combination_summary.csv`.
 
+Each row in `combination_summary.csv` is a candidate setting, not a single
+model. A candidate setting contains:
+
+- one shared control-variable combination identified by `cv_idx`
+- one VCE choice identified by `vce_idx`
+- the results for all enabled model sections under that same control-variable
+  combination and VCE choice
+
+Do not describe the workflow as if baseline, robustness, mechanism,
+moderation, heterogeneity, or IV sections independently choose different
+control-variable combinations inside the same candidate row.
+
+Before large summary runs, estimate workload in terms of:
+
+```text
+candidate control-variable combinations * 4 VCE choices * enabled model-section regressions
+```
+
+Explain the concrete recommended control setting and workload to the user. Do
+not expose internal control-count heuristics as something the user needs to
+understand before continuing.
+
 VCE choices are fixed:
 
 | `vce_idx` | `vce_suffix` | Meaning |

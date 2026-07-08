@@ -14,8 +14,8 @@ Regression args are implementation details. Use research-language labels when sp
 | `y` | 被解释变量, 结果变量 |
 | `x` | 核心解释变量, 解释变量 |
 | `cv` | 控制变量池 |
-| `cv_fixed` | 每个模型都保留的基础控制变量 |
-| `cv_min_count` | 每个候选模型至少包含的控制变量数量 |
+| `cv_fixed` | 每套候选设定都保留的基础控制变量, 锁变量 |
+| `cv_min_count` | 每套候选控制变量组合至少包含的控制变量数量 |
 | `panelvar` | 个体维度, 企业 ID, 样本主体 |
 | `timevar` | 时间维度, 年份 |
 | `meds` | 机制变量, 中介变量 |

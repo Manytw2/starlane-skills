@@ -178,16 +178,18 @@ The summary table is an intermediate decision artifact. Do not treat the highest
 Before large summary runs, estimate and explain the rough workload:
 
 ```text
-valid control subsets * 4 VCE choices * model specifications
+candidate control-variable combinations * 4 VCE choices * enabled model-section regressions
 ```
 
 ## Model Selection, Ethics, And Boundaries
 
 Starlane is a reproducible empirical-analysis workflow, not a significance factory.
 
-Scoring in `combination_summary.csv` is a search aid. It helps sort candidate models, but it is not proof that the highest-scoring model is the best research design.
+Each row in `combination_summary.csv` is a candidate setting: one shared control-variable combination, one VCE choice, and all enabled model-section results under that same setting.
 
-When recommending or selecting a model, consider:
+Scoring in `combination_summary.csv` is a search aid. It helps sort candidate settings, but it is not proof that the highest-scoring setting is the best research design.
+
+When recommending or selecting a candidate setting, consider:
 
 - score rank
 - expected coefficient direction

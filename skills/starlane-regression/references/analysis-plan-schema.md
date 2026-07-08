@@ -82,3 +82,17 @@ It is not a flat copy of the 18 regression arguments.
 
 - The compiler emits the regression args consumed by env scripts.
 - Module-specific regression args contributions are defined in `references/models/`.
+
+## Control Fields
+
+`baseline.controls.search_pool` is the full control-variable pool used for
+control-combination search. It includes both locked controls and optional
+controls.
+
+`baseline.controls.always_include` is a subset of `search_pool`. These locked
+baseline controls are included in every candidate control-variable combination.
+
+`baseline.controls.min_count` is the minimum total number of controls in each
+candidate control-variable combination. In guided setup, the agent should
+recommend a reasonable concrete value instead of treating the schema placeholder
+`0` as a research default.

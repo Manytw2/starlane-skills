@@ -17,6 +17,39 @@ The agent may suggest:
 
 These are only candidate mappings. The user must confirm.
 
+## Control Recommendation
+
+In guided setup mode, do not recommend only a flat control-variable pool.
+
+When candidate controls exist, recommend a complete control setting:
+
+- the shared control-variable pool for candidate settings
+- locked baseline controls that every candidate control combination should include
+- the minimum number of controls in each candidate control combination
+- the implied search workload
+
+The control-variable pool maps to `baseline.controls.search_pool`. It includes
+both locked controls and optional controls. Locked controls map to
+`baseline.controls.always_include` and must be a subset of the control-variable
+pool.
+
+Do not silently use `always_include: []` and `min_count: 0` in guided setup
+unless that is the agent's explicit research recommendation. Those values are
+valid engineering inputs, but they are not automatically reasonable research
+defaults.
+
+For the internal default recommendation, if the control-variable pool has `N`
+variables, set:
+
+```text
+min_count = max(round(0.4 * N), len(always_include))
+```
+
+Use this as an internal heuristic for generating a concrete recommendation.
+Do not explain the heuristic to the user unless they ask why that number was
+recommended. User-facing guidance should state the recommended locked controls,
+optional controls, minimum count, and workload directly.
+
 ## Confirmation Wording
 
 Use:
@@ -34,7 +67,13 @@ Use:
 Use:
 
 ```text
-控制变量池建议包括 ...；其中 ... 作为每个候选模型都保留的基础控制变量。
+控制变量设定建议：锁变量 / 基础控制变量包括 ...；其他可选控制变量包括 ...；每套候选控制变量组合至少包含 ... 个控制变量。
+```
+
+Use:
+
+```text
+同一套候选控制变量组合会用于基准回归、稳健性检验、机制检验和调节检验，方便横向比较。
 ```
 
 ## Analysis Plan
