@@ -6,10 +6,10 @@
 
 From research ideas to executable analysis plans.
 
-![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-green)
-![install](https://img.shields.io/badge/install-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-black)
-![skills](https://img.shields.io/badge/skills-1-blue)
-![language](https://img.shields.io/badge/language-English%20%7C%20中文-blue)
+[![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-green)](LICENSE.md)
+[![install](https://img.shields.io/badge/install-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-black)](#quick-start)
+[![skills](https://img.shields.io/badge/skills-1-blue)](skills/starlane-regression/SKILL.md)
+[![language](https://img.shields.io/badge/language-English%20%7C%20中文-blue)](README.md)
 
 [Quick Start](#quick-start) · [Architecture](docs/ARCHITECTURE_EN.md) · [中文](README.md)
 

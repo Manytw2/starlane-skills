@@ -6,10 +6,10 @@
 
 你来提供想法，我们帮你实现
 
-![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-green)
-![install](https://img.shields.io/badge/install-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-black)
-![skills](https://img.shields.io/badge/skills-1-blue)
-![language](https://img.shields.io/badge/language-中文%20%7C%20English-blue)
+[![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-green)](LICENSE.md)
+[![install](https://img.shields.io/badge/install-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-black)](#快速开始)
+[![skills](https://img.shields.io/badge/skills-1-blue)](skills/starlane-regression/SKILL.md)
+[![language](https://img.shields.io/badge/language-中文%20%7C%20English-blue)](README_EN.md)
 
 [立即安装](#快速开始) · [架构说明](docs/ARCHITECTURE.md) · [English](README_EN.md)
 
