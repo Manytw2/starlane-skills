@@ -74,6 +74,8 @@ class RegressionResult:
     se: float
     nobs: int
     r2: float
+    coefficients: dict[str, float]
+    standard_errors: dict[str, float]
 
     @property
     def t_stat(self) -> float:
@@ -290,7 +292,7 @@ def build_specs(args: RegressionArgs, cv_subset: list[str]) -> list[RegressionSp
             for iv in split_words(args.iv):
                 specs.append(RegressionSpec(f"iv__{y}__{x}__{iv}__stage1", "iv_stage1", x, iv, tuple(cv_subset)))
                 specs.append(RegressionSpec(f"iv__{y}__{x}__{iv}__stage2", "iv_stage2", y, x, tuple(cv_subset), instrument=iv))
-    for med in split_words(args.meds):
+    for med in split_words(args.meds)[:1]:
         for y in y_vars:
             for x in x_vars:
                 specs.append(RegressionSpec(f"mediation__{med}__{y}__{x}", f"mediation_{med}", y, x, tuple(cv_subset)))
@@ -387,7 +389,9 @@ def fit_fe_iv_2sls(
     sst = float(((y - y.mean()) ** 2).sum())
     ssr = float((resid**2).sum())
     r2 = 1.0 - ssr / sst if sst > 0 else math.nan
-    return RegressionResult(coef=coef, se=se, nobs=int(len(transformed)), r2=r2)
+    coefficients = {endogenous: coef}
+    standard_errors = {endogenous: se}
+    return RegressionResult(coef=coef, se=se, nobs=int(len(transformed)), r2=r2, coefficients=coefficients, standard_errors=standard_errors)
 
 
 def run_spec(
@@ -543,12 +547,16 @@ def fit_fe_ols(
     idx = names.index(target_var)
     if not np.isfinite(cov).all():
         return None
-    coef = float(beta_scaled[idx] / scale[idx])
-    se = float(math.sqrt(max(cov[idx, idx], 0.0)) / scale[idx]) if cov.size else math.nan
+    unscaled_beta = beta_scaled / scale
+    unscaled_se = np.sqrt(np.maximum(np.diag(cov), 0.0)) / scale if cov.size else np.full(len(names), math.nan)
+    coef = float(unscaled_beta[idx])
+    se = float(unscaled_se[idx])
     sst = float(((y - y.mean()) ** 2).sum())
     ssr = float((resid**2).sum())
     r2 = 1.0 - ssr / sst if sst > 0 else math.nan
-    return RegressionResult(coef=coef, se=se, nobs=int(len(transformed)), r2=r2)
+    coefficients = {name: float(value) for name, value in zip(names, unscaled_beta)}
+    standard_errors = {name: float(value) for name, value in zip(names, unscaled_se)}
+    return RegressionResult(coef=coef, se=se, nobs=int(len(transformed)), r2=r2, coefficients=coefficients, standard_errors=standard_errors)
 
 
 def stars_for_result(result: RegressionResult | None, coef_direction: str) -> int:

@@ -596,9 +596,9 @@ def build_do_content(
             table_num += 1
         lines.append("")
 
-    # Mediation
-    for med_idx, med in enumerate(meds, start=1):
-        med_title = f"中介机制{med_idx}"
+    # Mediation: template uses the first mediation variable only.
+    for med in meds[:1]:
+        med_title = "中介机制"
         lines.append(f"** {med_title}：{med}")
         block_start = m_idx
         for yi in y:

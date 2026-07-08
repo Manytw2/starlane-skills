@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import sys
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_ORIENT
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
 from common import (
@@ -37,16 +39,17 @@ from common import (
 
 
 SECTION_TITLES = {
-    "baseline_nocv": "Baseline regression: no controls",
-    "baseline_cv": "Baseline regression: selected controls",
-    "robustness_alt_x": "Robustness: alternative X",
-    "robustness_alt_y": "Robustness: alternative Y",
-    "robustness_ln_x": "Robustness: log X",
-    "robustness_ln_y": "Robustness: log Y",
-    "robustness_lag": "Robustness: lagged X",
-    "robustness_year": "Robustness: sample window",
-    "iv_stage1": "IV: first stage",
-    "iv_stage2": "IV: second stage",
+    "baseline": "基准回归",
+    "robustness_alt_x": "稳健性检验-替换X",
+    "robustness_alt_y": "稳健性检验-替换变量",
+    "robustness_ln_x": "稳健性检验-X取对数",
+    "robustness_ln_y": "稳健性检验-Y取对数",
+    "robustness_lag": "稳健性检验-滞后期",
+    "robustness_year": "稳健性检验-时间窗口",
+    "iv_stage1": "工具变量-一阶段",
+    "iv_stage2": "工具变量-二阶段 2SLS",
+    "mediation": "中介机制",
+    "moderation": "异质性分析-调节效应检验",
 }
 
 
@@ -54,7 +57,7 @@ def section_title(section: str) -> str:
     if section in SECTION_TITLES:
         return SECTION_TITLES[section]
     if section.startswith("mediation_"):
-        return f"Mediation: {section.removeprefix('mediation_')}"
+        return "中介机制"
     if section.startswith("moderation_"):
         return f"Moderation: {section.removeprefix('moderation_')}"
     if section.startswith("heterogeneity_discrete_"):
@@ -62,57 +65,123 @@ def section_title(section: str) -> str:
     return section.replace("_", " ").title()
 
 
+def doc_section_key(section: str) -> str:
+    if section in ("baseline_nocv", "baseline_cv"):
+        return "baseline"
+    if section.startswith("mediation_"):
+        return "mediation"
+    if section.startswith("moderation_"):
+        return "moderation"
+    return section
+
+
 def model_label(row: dict[str, str], idx: int) -> str:
-    pieces = [f"({idx})"]
-    if row["depvar"]:
-        pieces.append(row["depvar"])
-    if row["target"]:
-        pieces.append(row["target"])
     if row["condition"]:
-        pieces.append(row["condition"])
-    return "\n".join(pieces)
+        return row["condition"]
+    return f"({idx})"
 
 
-def set_cell_text(cell, text: str, *, bold: bool = False, align: int | None = None) -> None:
+def format_decimal(value: str | float, digits: int = 3) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(number):
+        return ""
+    return f"{number:.{digits}f}"
+
+
+def format_n(value: str | int) -> str:
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        return ""
+    return f"{number:,}"
+
+
+def coef_text(row: dict[str, str], variable: str) -> str:
+    coefficients = row.get("coefficients", {})
+    if not isinstance(coefficients, dict) or variable not in coefficients:
+        return ""
+    stars = row["stars"] if variable == row["target"] else ""
+    return f"{format_decimal(coefficients[variable])}{stars}"
+
+
+def se_text(row: dict[str, str], variable: str) -> str:
+    standard_errors = row.get("standard_errors", {})
+    if not isinstance(standard_errors, dict) or variable not in standard_errors:
+        return ""
+    formatted = format_decimal(standard_errors[variable])
+    return f"({formatted})" if formatted else ""
+
+
+def ordered_variables(rows: list[dict[str, str]]) -> list[str]:
+    out: list[str] = []
+    for row in rows:
+        for variable in [row["target"], *row["controls"].split()]:
+            if variable and variable not in out:
+                out.append(variable)
+    return out
+
+
+def set_run_font(run, *, bold: bool = False, size: int = 11) -> None:
+    run.bold = bold
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(size)
+
+
+def set_cell_text(cell, text: str, *, bold: bool = False, align: int | None = None, size: int = 10) -> None:
     cell.text = ""
     paragraph = cell.paragraphs[0]
     if align is not None:
         paragraph.alignment = align
     run = paragraph.add_run(text)
-    run.bold = bold
-    run.font.name = "Times New Roman"
-    run.font.size = Pt(9)
+    set_run_font(run, bold=bold, size=size)
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
 
-def add_regression_table(doc: Document, title: str, rows: list[dict[str, str]]) -> None:
-    doc.add_heading(title, level=2)
+def set_note_cell_borders(cell) -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    for existing in tc_pr.findall(qn("w:tcBorders")):
+        tc_pr.remove(existing)
+    borders = OxmlElement("w:tcBorders")
+    for edge, value in (("top", "single"), ("left", "nil"), ("bottom", "nil"), ("right", "nil")):
+        element = OxmlElement(f"w:{edge}")
+        element.set(qn("w:val"), value)
+        element.set(qn("w:color"), "000000")
+        borders.append(element)
+    tc_pr.append(borders)
+
+
+def add_table_title(doc: Document, table_num: int, title: str) -> None:
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.space_after = Pt(0)
+    set_run_font(paragraph.add_run(f"Table {table_num}: {title}"))
+
+
+def add_regression_table(doc: Document, table_num: int, title: str, rows: list[dict[str, str]]) -> None:
+    add_table_title(doc, table_num, title)
     table = doc.add_table(rows=1, cols=len(rows) + 1)
     table.style = "Table Grid"
-    set_cell_text(table.rows[0].cells[0], "Variable", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    set_cell_text(table.rows[0].cells[0], "", align=WD_ALIGN_PARAGRAPH.CENTER)
     for idx, row in enumerate(rows, start=1):
-        set_cell_text(table.rows[0].cells[idx], model_label(row, idx), bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+        set_cell_text(table.rows[0].cells[idx], model_label(row, idx), align=WD_ALIGN_PARAGRAPH.CENTER)
 
-    coef_row = table.add_row().cells
-    set_cell_text(coef_row[0], "Coefficient")
+    dep_row = table.add_row().cells
+    set_cell_text(dep_row[0], "")
     for idx, row in enumerate(rows, start=1):
-        set_cell_text(coef_row[idx], row["coef_with_stars"], align=WD_ALIGN_PARAGRAPH.CENTER)
+        set_cell_text(dep_row[idx], row["depvar"], align=WD_ALIGN_PARAGRAPH.CENTER)
 
-    se_row = table.add_row().cells
-    set_cell_text(se_row[0], "Std. error")
-    for idx, row in enumerate(rows, start=1):
-        se = f"({row['se']})" if row["se"] else ""
-        set_cell_text(se_row[idx], se, align=WD_ALIGN_PARAGRAPH.CENTER)
-
-    n_row = table.add_row().cells
-    set_cell_text(n_row[0], "Observations")
-    for idx, row in enumerate(rows, start=1):
-        set_cell_text(n_row[idx], row["nobs"], align=WD_ALIGN_PARAGRAPH.CENTER)
-
-    r2_row = table.add_row().cells
-    set_cell_text(r2_row[0], "R-squared")
-    for idx, row in enumerate(rows, start=1):
-        set_cell_text(r2_row[idx], row["r2"], align=WD_ALIGN_PARAGRAPH.CENTER)
+    for variable in ordered_variables(rows):
+        coef_row = table.add_row().cells
+        set_cell_text(coef_row[0], variable)
+        for idx, row in enumerate(rows, start=1):
+            set_cell_text(coef_row[idx], coef_text(row, variable), align=WD_ALIGN_PARAGRAPH.CENTER)
+        se_row = table.add_row().cells
+        set_cell_text(se_row[0], "")
+        for idx, row in enumerate(rows, start=1):
+            set_cell_text(se_row[idx], se_text(row, variable), align=WD_ALIGN_PARAGRAPH.CENTER)
 
     entity_fe_row = table.add_row().cells
     set_cell_text(entity_fe_row[0], "Entity FE")
@@ -124,36 +193,49 @@ def add_regression_table(doc: Document, title: str, rows: list[dict[str, str]]) 
     for idx in range(1, len(rows) + 1):
         set_cell_text(time_fe_row[idx], "Yes", align=WD_ALIGN_PARAGRAPH.CENTER)
 
-    note = doc.add_paragraph("Standard errors in parentheses; *** p<0.01, ** p<0.05, * p<0.1.")
-    note.paragraph_format.space_after = Pt(8)
-    for run in note.runs:
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(9)
+    n_row = table.add_row().cells
+    set_cell_text(n_row[0], "N")
+    for idx, row in enumerate(rows, start=1):
+        set_cell_text(n_row[idx], format_n(row["nobs"]), align=WD_ALIGN_PARAGRAPH.CENTER)
+
+    r2_row = table.add_row().cells
+    set_cell_text(r2_row[0], "Adj. R2")
+    for idx, row in enumerate(rows, start=1):
+        set_cell_text(r2_row[idx], format_decimal(row["r2"]), align=WD_ALIGN_PARAGRAPH.CENTER)
+
+    note = "Standard errors in parentheses; *** p<0.01, ** p<0.05, * p<0.1"
+    if rows and rows[0]["section"] == "iv_stage1" and rows[0].get("instrument"):
+        note += f"; x ~ iv + cv; IV: {rows[0]['instrument']}"
+    if rows and rows[0]["section"] == "iv_stage2" and rows[0].get("instrument"):
+        note += f"; y ~ x_hat + cv; IV: {rows[0]['instrument']}"
+    note_cells = table.add_row().cells
+    note_cell = note_cells[0]
+    if len(note_cells) > 1:
+        note_cell = note_cell.merge(note_cells[-1])
+    set_cell_text(note_cell, note, size=10)
+    set_note_cell_borders(note_cell)
 
 
 def write_docx(path: Path, rows: list[dict[str, str]], metadata: dict[str, str]) -> None:
     doc = Document()
     section = doc.sections[0]
-    section.orientation = WD_ORIENT.LANDSCAPE
-    section.page_width, section.page_height = section.page_height, section.page_width
-    section.top_margin = Inches(0.6)
-    section.bottom_margin = Inches(0.6)
-    section.left_margin = Inches(0.6)
-    section.right_margin = Inches(0.6)
+    section.page_width = Inches(8.27)
+    section.page_height = Inches(11.69)
+    section.top_margin = Inches(1)
+    section.bottom_margin = Inches(1)
+    section.left_margin = Inches(1)
+    section.right_margin = Inches(1)
 
     styles = doc.styles
     styles["Normal"].font.name = "Times New Roman"
-    styles["Normal"].font.size = Pt(10)
-
-    doc.add_heading("Starlane Python Regression Results", level=1)
-    for key, value in metadata.items():
-        doc.add_paragraph(f"{key}: {value}")
+    styles["Normal"].font.size = Pt(11)
 
     grouped: dict[str, list[dict[str, str]]] = {}
     for row in rows:
-        grouped.setdefault(row["section"], []).append(row)
-    for section_name, section_rows in grouped.items():
-        add_regression_table(doc, section_title(section_name), section_rows)
+        key = doc_section_key(row["section"])
+        grouped.setdefault(key, []).append(row)
+    for table_num, (section_name, section_rows) in enumerate(grouped.items(), start=1):
+        add_regression_table(doc, table_num, section_title(section_name), section_rows)
 
     doc.save(path)
 
@@ -207,6 +289,9 @@ def run_final(values: list[str], output_arg: str | None = None, source_path: str
                 "coef_with_stars": format_coef(result, stars),
                 "nobs": "" if result is None else str(result.nobs),
                 "r2": "" if result is None else f"{result.r2:.10g}",
+                "coefficients": {} if result is None else result.coefficients,
+                "standard_errors": {} if result is None else result.standard_errors,
+                "instrument": spec.instrument,
             }
         )
 
@@ -215,7 +300,7 @@ def run_final(values: list[str], output_arg: str | None = None, source_path: str
         fieldnames = ["column", "section", "depvar", "target", "controls", "condition", "coef", "se", "p_value", "stars", "coef_with_stars", "nobs", "r2"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows({field: row[field] for field in fieldnames} for row in rows)
 
     md_path = result_dir / "final_result.md"
     metadata = {
