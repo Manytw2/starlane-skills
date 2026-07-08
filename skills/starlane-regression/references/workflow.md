@@ -27,7 +27,7 @@ If the user has not selected an env, ask before running.
 
 Guided setup mode starts from a data file, partial variables, or a research idea.
 
-Direct execution mode starts from complete variable mappings or a regression-compatible argument list.
+Direct execution mode starts from complete variable mappings or a valid structured `regression_args.json`.
 
 In guided setup mode, do not ask the user to directly fill regression args. Maintain one `analysis_plan_draft`, confirm each model module into that draft, then compile the confirmed plan.
 
@@ -189,8 +189,8 @@ final stage -> scripts/envs/stata/generate_final_source.py -> generated .do -> o
 Python env:
 
 ```text
-summary stage -> uv run python scripts/envs/python/summary.py
-final stage -> uv run python scripts/envs/python/generate_final_source.py -> generated .py -> uv run python regression_generated.py
+summary stage -> uv run --project <skill-root> python scripts/workflow/run_stage.py summary --env python --args-json ...
+final stage -> uv run --project <skill-root> python scripts/workflow/run_stage.py final --env python --args-json ... --selection-json ...
 ```
 
 ## Python Env
@@ -225,13 +225,20 @@ The Stata env should follow Stata ecosystem conventions and disclose the command
 
 ## Invocation Rules
 
-Python scripts in this project must be invoked through:
+Python scripts in this skill must be invoked through the skill-local uv project:
 
 ```text
-uv run python ...
+uv run --project <skill-root> python scripts/workflow/run_stage.py ...
 ```
 
-Do not run project workflow scripts with bare `python`, `python3`, or executable shebangs in agent instructions, generated run notes, or tests.
+Do not run workflow scripts with bare `python`, `python3`, or executable shebangs in agent instructions, generated run notes, or tests. Do not rely on the user's current workspace Python environment.
+
+The env entry points consume JSON files. `regression_args.json` is a structured JSON object. Positional regression arguments and regression-args arrays are not supported:
+
+```text
+summary --env python --args-json .starlane/regression_args.json
+final --env python --args-json .starlane/regression_args.json --selection-json .starlane/selected_candidate.json
+```
 
 Legacy top-level wrappers are not part of the current env layout. Use the env-structured entry points under `scripts/workflow/` and `scripts/envs/`.
 
@@ -326,7 +333,7 @@ VCE choices are fixed:
 
 Dynamic coefficient columns are defined by the section schemas in `references/models/`.
 
-Final source generation consumes the compiled regression args plus `cv_idx` and `vce_idx`.
+Final source generation consumes the compiled regression args JSON plus a `selected_candidate.json` object containing `cv_idx` and `vce_idx`.
 
 ## Output And Runtime Directories
 

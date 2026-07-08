@@ -14,39 +14,55 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 QUICK_START = Path(__file__).resolve().parent
-SCRIPTS = ROOT / "skills" / "starlane-regression" / "scripts"
+SKILL_ROOT = ROOT / "skills" / "starlane-regression"
+SCRIPTS = SKILL_ROOT / "scripts"
 WORKFLOW_SCRIPTS = SCRIPTS / "workflow"
 PYTHON_ENV_SCRIPTS = SCRIPTS / "envs" / "python"
 STATA_ENV_SCRIPTS = SCRIPTS / "envs" / "stata"
 DEMO_DTA = QUICK_START / "demo.dta"
-UV_PYTHON = ["uv", "run", "python"]
+UV_PYTHON = ["uv", "run", "--project", str(SKILL_ROOT), "python"]
 
 sys.path.insert(0, str(WORKFLOW_SCRIPTS))
 from runtime import RunContext, clean_success_tmp, create_run_context, mark_failed, mark_success, publish_outputs  # noqa: E402
 
-SUMMARY_ARGS = [
-    str(DEMO_DTA),
-    "lnApplyG lnGrantG",
-    "Attention",
-    "Scale Lev lnAge Tange Cash ROA SOE Top1 Inst",
-    "Scale Lev lnAge ROA",
-    "5",
-    "id",
-    "year",
-    "Charge|Subsidy|lnCSR",
-    "OverSea|lnMediaPos|lnMediaNeg",
-    "",
-    "",
-    "alt_y:lnAGreenInv lnGGreenInv|lag:1",
-    "0",
-    "0",
-    "",
-    "Thermalinv",
-    "positive",
-    "",
-    "",
-    "",
-]
+SUMMARY_ARGS = {
+    "input_dta": str(DEMO_DTA),
+    "outcomes": ["lnApplyG", "lnGrantG"],
+    "explanatory_vars": ["Attention"],
+    "controls": {
+        "search_pool": ["Scale", "Lev", "lnAge", "Tange", "Cash", "ROA", "SOE", "Top1", "Inst"],
+        "always_include": ["Scale", "Lev", "lnAge", "ROA"],
+        "min_count": 5,
+    },
+    "panel": {
+        "entity": "id",
+        "time": "year",
+    },
+    "robustness": {
+        "alternative_outcomes": ["lnAGreenInv", "lnGGreenInv"],
+        "alternative_explanatory_vars": [],
+        "lag_periods": [1],
+        "log_y": False,
+        "log_x": False,
+        "sample_window": None,
+    },
+    "mechanism": {
+        "variables": ["Charge", "Subsidy", "lnCSR"],
+    },
+    "moderation": {
+        "variables": ["OverSea", "lnMediaPos", "lnMediaNeg"],
+    },
+    "heterogeneity": {
+        "discrete_groups": [],
+        "selected_values": {},
+    },
+    "iv": {
+        "instruments": ["Thermalinv"],
+    },
+    "execution": {
+        "coef_direction": "positive",
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,10 +119,6 @@ def first_summary_row(summary_path: Path) -> dict[str, str]:
 
 
 def summary_chunk_path(out_dir: Path) -> Path:
-    start = SUMMARY_ARGS[18] if len(SUMMARY_ARGS) > 18 else ""
-    end = SUMMARY_ARGS[19] if len(SUMMARY_ARGS) > 19 else ""
-    if start != "" and end != "":
-        return out_dir / "tmp" / f"combination_summary_part_{start}_{end}.csv"
     return out_dir / "combination_summary.csv"
 
 
@@ -119,16 +131,15 @@ def print_outputs(env_name: str, paths: list[tuple[str, Path]]) -> None:
 def run_python_env() -> None:
     context = create_run_context(ROOT, "python", "demo")
     env = {**os.environ, **context.env_vars()}
-    context.write_input_json("regression_args.json", SUMMARY_ARGS)
+    args_json = context.write_input_json("regression_args.json", SUMMARY_ARGS)
 
     try:
         print("\nRunning Python env summary...")
-        run([*UV_PYTHON, str(PYTHON_ENV_SCRIPTS / "summary.py"), json.dumps(SUMMARY_ARGS, ensure_ascii=False)], env=env)
+        run([*UV_PYTHON, str(PYTHON_ENV_SCRIPTS / "summary.py"), "--args-json", str(args_json)], env=env)
 
         summary_path = context.outputs_dir / "combination_summary.csv"
         first = first_summary_row(summary_path)
-        final_args = [*SUMMARY_ARGS[:18], str(int(first["cv_idx"])), str(int(first["vce_idx"])), str(context.outputs_dir)]
-        context.write_input_json("final_args.json", final_args)
+        selection_json = context.write_input_json("selected_candidate.json", {"cv_idx": int(first["cv_idx"]), "vce_idx": int(first["vce_idx"])})
         generated_source = context.generated_dir / "regression_generated.py"
 
         print("\nGenerating Python env final source...")
@@ -136,7 +147,11 @@ def run_python_env() -> None:
             [
                 *UV_PYTHON,
                 str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
-                json.dumps(final_args, ensure_ascii=False),
+                "--args-json",
+                str(args_json),
+                "--selection-json",
+                str(selection_json),
+                "--output",
                 str(generated_source),
             ],
             env=env,
@@ -174,14 +189,37 @@ def run_python_env() -> None:
         raise
 
 
-def write_stata_summary_runner(path: Path, export_dir: Path, tmp_dir: Path) -> None:
-    quoted = " ".join(f'"{arg}"' for arg in SUMMARY_ARGS)
+def quote_stata_arg(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def write_stata_summary_config(path: Path, args_values: dict[str, str], export_dir: Path, tmp_dir: Path) -> None:
+    from contracts import REGRESSION_ARG_NAMES, validate_regression_args
+
+    flat_args = validate_regression_args(args_values)
+    lines = [
+        f'global STARLANE_EXPORT "{export_dir.as_posix()}"',
+        f'global STARLANE_TMP "{tmp_dir.as_posix()}"',
+    ]
+    for name in REGRESSION_ARG_NAMES:
+        lines.append(f'global starlane_{name} {quote_stata_arg(flat_args[name])}')
+    lines.extend(
+        [
+            'global starlane_cv_idx_start ""',
+            'global starlane_cv_idx_end ""',
+            'global starlane_probe_only ""',
+            'global starlane_csv_timestamp ""',
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_stata_summary_runner(path: Path, config_path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                f'global STARLANE_EXPORT "{export_dir.as_posix()}"',
-                f'global STARLANE_TMP "{tmp_dir.as_posix()}"',
-                f'do "{(STATA_ENV_SCRIPTS / "summary.do").as_posix()}" {quoted}',
+                f'do "{config_path.as_posix()}"',
+                f'do "{(STATA_ENV_SCRIPTS / "summary.do").as_posix()}"',
                 "exit",
             ]
         )
@@ -212,12 +250,14 @@ def run_stata_env() -> None:
         )
 
     context = create_run_context(ROOT, "stata", "demo")
-    context.write_input_json("regression_args.json", SUMMARY_ARGS)
+    args_json = context.write_input_json("regression_args.json", SUMMARY_ARGS)
 
     try:
         print("\nRunning Stata env summary...")
+        config = context.generated_dir / "stata_summary_config.do"
         runner = context.generated_dir / "run_stata_summary.do"
-        write_stata_summary_runner(runner, context.outputs_dir, context.tmp_dir)
+        write_stata_summary_config(config, SUMMARY_ARGS, context.outputs_dir, context.tmp_dir)
+        write_stata_summary_runner(runner, config)
         run_stata_batch(stata_bin, runner, context.logs_dir)
 
         summary_path = summary_chunk_path(context.outputs_dir)
@@ -226,8 +266,7 @@ def run_stata_env() -> None:
             shutil.copyfile(summary_path, canonical_summary_path)
 
         first = first_summary_row(canonical_summary_path)
-        final_args = [*SUMMARY_ARGS[:18], str(int(first["cv_idx"])), str(int(first["vce_idx"])), str(context.outputs_dir)]
-        context.write_input_json("final_args.json", final_args)
+        selection_json = context.write_input_json("selected_candidate.json", {"cv_idx": int(first["cv_idx"]), "vce_idx": int(first["vce_idx"])})
         generated_source = context.generated_dir / "regression_generated.do"
 
         print("\nGenerating Stata env final source...")
@@ -235,8 +274,14 @@ def run_stata_env() -> None:
             [
                 *UV_PYTHON,
                 str(STATA_ENV_SCRIPTS / "generate_final_source.py"),
-                json.dumps(final_args, ensure_ascii=False),
+                "--args-json",
+                str(args_json),
+                "--selection-json",
+                str(selection_json),
+                "--output",
                 str(generated_source),
+                "--result-dir",
+                str(context.outputs_dir),
             ]
         )
 

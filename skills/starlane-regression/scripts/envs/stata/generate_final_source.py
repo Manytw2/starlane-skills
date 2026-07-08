@@ -1,11 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
-"""
-Generate a readable Stata .do file from Starlane regression parameters.
-Use the same 18 args as the Stata summary target, then append cv_idx and vce_idx
-from combination_summary.csv. Hidden encoded selection keys are intentionally unsupported.
-"""
+"""Generate a readable Stata .do file from JSON Starlane regression parameters."""
 
 from __future__ import annotations
 
@@ -13,6 +9,12 @@ import json
 import sys
 from pathlib import Path
 from urllib.parse import unquote
+
+WORKFLOW_SCRIPTS = Path(__file__).resolve().parents[2] / "workflow"
+if str(WORKFLOW_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(WORKFLOW_SCRIPTS))
+
+from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # Block templates: each maps to regression_summary column structure.
@@ -123,30 +125,9 @@ def parse_rob_vars(rob_raw: str) -> dict[str, str]:
 
 
 def parse_heterogeneity_discrete_values(raw: str) -> dict[str, list[str]]:
-    """Parse flat encoded string, with legacy JSON compatibility."""
+    """Parse flat encoded heterogeneity values from the internal env mapping."""
     if not raw or not raw.strip():
         return {}
-    if raw.lstrip().startswith("{"):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, dict):
-            out: dict[str, list[str]] = {}
-            for key, values in parsed.items():
-                if not isinstance(key, str) or not isinstance(values, list):
-                    continue
-                cleaned: list[str] = []
-                seen: set[str] = set()
-                for value in values:
-                    text = str(value).strip()
-                    if not text or text in seen:
-                        continue
-                    seen.add(text)
-                    cleaned.append(text)
-                if cleaned:
-                    out[key] = cleaned
-            return out
     out: dict[str, list[str]] = {}
     for item in raw.strip().split("|"):
         item = item.strip()
@@ -271,33 +252,21 @@ def build_analysis_var_pool(
     return unique_preserve(items)
 
 
-def parse_args(argv: list[str]) -> tuple[list[str], str | None]:
-    """Parse 20+ args from argv. Supports JSON array or positional.
+def parse_args(argv: list[str]) -> tuple[list[str], Path]:
+    if len(argv) > 1 and not argv[1].startswith("-"):
+        raise ValueError("Positional regression args are no longer supported. Use --args-json PATH.")
+    import argparse
 
-    Required order: the 18 regression_summary.do args, then cv_idx and vce_idx.
-    Optional 21st arg is result_dir. Output path is the final CLI arg after the JSON
-    array or after positional args.
-    """
-    if len(argv) < 2:
-        raise ValueError("Usage: generate_final_source.py <args_json_or_20_positional> [output_path]")
-    first = argv[1]
-    output_path: str | None = None
-    arr: list
-    if first.strip().startswith("["):
-        try:
-            arr = json.loads(first)
-            output_path = argv[2] if len(argv) > 2 else None
-        except json.JSONDecodeError:
-            arr = argv[1:22]
-            output_path = argv[22] if len(argv) > 22 else None
-    else:
-        arr = argv[1:22]
-        output_path = argv[22] if len(argv) > 22 else None
-    if len(arr) < 20:
-        raise ValueError(f"Expected 20 args: 18 summary args + cv_idx + vce_idx, got {len(arr)}")
-    base = [str(a) for a in arr[:20]]
-    result_dir = str(arr[20]).strip() if len(arr) > 20 else "."
-    return base + [result_dir], output_path
+    parser = argparse.ArgumentParser(description="Generate a readable Stata .do file from JSON Starlane regression parameters.")
+    parser.add_argument("--args-json", required=True, help="Path to regression_args.json")
+    parser.add_argument("--selection-json", required=True, help="Path to selected_candidate.json with cv_idx and vce_idx")
+    parser.add_argument("--output", required=True, help="Output .do path")
+    parser.add_argument("--result-dir", default=".", help="Directory where Stata final outputs should be written")
+    ns = parser.parse_args(argv[1:])
+    mapping = load_regression_args_json(Path(ns.args_json))
+    selection = load_selection_json(Path(ns.selection_json))
+    base = [mapping[name] for name in REGRESSION_ARG_NAMES]
+    return [*base, str(selection["cv_idx"]), str(selection["vce_idx"]), str(ns.result_dir)], Path(ns.output)
 
 
 def _add_reg2docx(lines: list[str], m_start: int, m_end: int, title: str, table_num: int, replace: bool = False) -> None:
@@ -683,7 +652,7 @@ def build_do_content(
 
 def main() -> int:
     try:
-        raw_args, output_path = parse_args(sys.argv)
+        raw_args, out = parse_args(sys.argv)
 
         (
             input_dta,
@@ -732,11 +701,6 @@ def main() -> int:
         x_ln = x_ln_str.strip().lower() in ("", "1", "是", "yes", "true")
 
         rob = parse_rob_vars(rob_vars_str)
-
-        if output_path:
-            out = Path(output_path)
-        else:
-            out = Path.cwd() / "starlane-regression.do"
 
         raw_result_dir = result_dir.strip() if result_dir.strip() else "."
         result_dir_path = Path(raw_result_dir)

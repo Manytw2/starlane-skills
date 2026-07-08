@@ -26,9 +26,11 @@ from common import (
     ensure_columns,
     fail,
     format_coef,
+    load_regression_args_json,
+    load_selection_json,
     make_base_sample,
     prepare_regression_data,
-    parse_cli_values,
+    reject_positional_args,
     read_data,
     run_spec,
     spec_required_columns,
@@ -240,15 +242,18 @@ def write_docx(path: Path, rows: list[dict[str, str]], metadata: dict[str, str])
     doc.save(path)
 
 
-def run_final(values: list[str], output_arg: str | None = None, source_path: str | None = None) -> dict[str, str]:
-    if len(values) < 20:
-        raise ValueError("Expected 18 summary args + cv_idx + vce_idx + optional result_dir")
-    args = RegressionArgs.from_list(values)
-    cv_idx = int(values[18])
-    vce_idx = int(values[19])
-    result_dir = Path(values[20]) if len(values) > 20 and values[20].strip() else Path(os.environ.get("STARLANE_EXPORT", ".starlane"))
-    if output_arg:
-        result_dir = Path(output_arg)
+def run_final(
+    values: dict[str, str],
+    *,
+    cv_idx: int,
+    vce_idx: int,
+    output_arg: str | None = None,
+    source_path: str | None = None,
+) -> dict[str, str]:
+    if len(values) < 18:
+        raise ValueError("Expected 18 summary args")
+    args = RegressionArgs.from_mapping(values)
+    result_dir = Path(output_arg) if output_arg else Path(os.environ.get("STARLANE_EXPORT", ".starlane"))
     result_dir.mkdir(parents=True, exist_ok=True)
 
     y_vars = split_words(args.y)
@@ -341,7 +346,7 @@ def run_final(values: list[str], output_arg: str | None = None, source_path: str
                 "Raw args:",
                 "",
                 "```json",
-                json.dumps([*args.base_list(), str(cv_idx), str(vce_idx), str(result_dir)], ensure_ascii=False, indent=2),
+                json.dumps({"args": args.as_mapping(), "selection": {"cv_idx": cv_idx, "vce_idx": vce_idx}, "result_dir": str(result_dir)}, ensure_ascii=False, indent=2),
                 "```",
             ]
         )
@@ -361,8 +366,18 @@ def run_final(values: list[str], output_arg: str | None = None, source_path: str
 
 def main() -> int:
     try:
-        values, output_arg = parse_cli_values(sys.argv)
-        outputs = run_final(values, output_arg=output_arg)
+        reject_positional_args(sys.argv)
+        import argparse
+
+        parser = argparse.ArgumentParser(description="Run Starlane Python final stage from JSON files.")
+        parser.add_argument("--args-json", required=True, help="Path to regression_args.json")
+        parser.add_argument("--selection-json", required=True, help="Path to selected_candidate.json with cv_idx and vce_idx")
+        parser.add_argument("--output", help="Output directory. Defaults to STARLANE_EXPORT or .starlane")
+        ns = parser.parse_args(sys.argv[1:])
+
+        values = load_regression_args_json(ns.args_json)
+        selection = load_selection_json(ns.selection_json)
+        outputs = run_final(values, cv_idx=selection["cv_idx"], vce_idx=selection["vce_idx"], output_arg=ns.output)
         print(f"STARLANE_FINAL_OUTPUT: {outputs['docx']}")
         print(f"STARLANE_SOURCE_ARTIFACT: {outputs['source']}")
         return 0

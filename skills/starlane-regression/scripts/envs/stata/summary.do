@@ -15,30 +15,32 @@ Performance (oneclick-inspired): No data reload per iteration; rob vars created 
 
 Selection: rows expose cv_idx and vce_idx directly. Pass those values to scripts/envs/stata/generate_final_source.py.
 
-Args: input_dta y x cv cv_fixed cv_min_count panelvar timevar meds mods heterogeneity_discrete heterogeneity_discrete_values rob_vars y_ln x_ln rob_year_range iv coef_direction [cv_idx_start cv_idx_end probe_only]
+Config: set starlane_* globals before running this file. The workflow runner
+generates a stata_summary_config.do file for this purpose.
 
-Parameters:
-  1.  input_dta   - Input data path (.dta, .xlsx, .xls, or .csv; first row as headers for non-dta)
-  2.  y           - Dependent variable(s), space-separated
-  3.  x           - Core independent variable(s), space-separated
-  4.  cv          - All control variables, space-separated
-  5.  cv_fixed    - Fixed CVs always included (subset of cv), space-separated. Empty = none fixed
-  6.  cv_min_count- Minimum number of CVs (default 0)
-  7.  panelvar    - Panel entity variable (= cluster_var for VCE)
-  8.  timevar     - Time variable (= cluster_var2 for VCE)
-  9.  meds        - Mediation variables, pipe-separated
-  10. mods        - Moderation variables, pipe-separated
-  11. heterogeneity_discrete - Discrete heterogeneity variables, pipe-separated
-  12. heterogeneity_discrete_values - Flat encoded string: selected discrete values by variable
-  13. rob_vars    - Robustness variables
-  14. y_ln        - do ln(y) robustness? "1"/"是"/"" (default) = yes; "0"/"否" = skip
-  15. x_ln        - do ln(x) robustness? "1"/"是"/"" (default) = yes; "0"/"否" = skip
-  16. rob_year_range - Sample period "year_left:year_right" (left<right), empty = skip
-  17. iv          - Instrumental variable(s)
-  18. coef_direction - "positive" or "negative"; used for pruning (requires both p<0.1 and correct sign to continue)
-  19. cv_idx_start   - (optional) Start cv index for parallel chunk. Used by orchestrator.
-  20. cv_idx_end     - (optional) End cv index inclusive. Used by orchestrator.
-  21. probe_only     - (optional) "1" = compute n_valid, write to .n_valid.txt, exit. Used by orchestrator.
+Config globals:
+  starlane_input_dta
+  starlane_y
+  starlane_x
+  starlane_cv
+  starlane_cv_fixed
+  starlane_cv_min_count
+  starlane_panelvar
+  starlane_timevar
+  starlane_meds
+  starlane_mods
+  starlane_heterogeneity_discrete
+  starlane_heterogeneity_discrete_values
+  starlane_rob_vars
+  starlane_y_ln
+  starlane_x_ln
+  starlane_rob_year_range
+  starlane_iv
+  starlane_coef_direction
+  starlane_cv_idx_start
+  starlane_cv_idx_end
+  starlane_probe_only
+  starlane_csv_timestamp
 
 Paths default to .starlane/ and .starlane/tmp unless $STARLANE_EXPORT and $STARLANE_TMP are set.
 
@@ -49,7 +51,28 @@ Output:
   - Intermediates (.score_*.dta, part CSV, .n_valid.txt) under $STARLANE_TMP or .starlane/tmp.
 */
 
-args input_arg y_arg x_arg cv_arg cv_fixed_arg cv_min_count_arg panelvar_arg timevar_arg meds_arg mods_arg het_disc_arg het_disc_vals_arg rob_vars_arg y_ln_arg x_ln_arg rob_year_range_arg iv_arg coef_direction_arg cv_idx_start_arg cv_idx_end_arg probe_only_arg csv_timestamp_arg
+local input_arg "$starlane_input_dta"
+local y_arg "$starlane_y"
+local x_arg "$starlane_x"
+local cv_arg "$starlane_cv"
+local cv_fixed_arg "$starlane_cv_fixed"
+local cv_min_count_arg "$starlane_cv_min_count"
+local panelvar_arg "$starlane_panelvar"
+local timevar_arg "$starlane_timevar"
+local meds_arg "$starlane_meds"
+local mods_arg "$starlane_mods"
+local het_disc_arg "$starlane_heterogeneity_discrete"
+local het_disc_vals_arg "$starlane_heterogeneity_discrete_values"
+local rob_vars_arg "$starlane_rob_vars"
+local y_ln_arg "$starlane_y_ln"
+local x_ln_arg "$starlane_x_ln"
+local rob_year_range_arg "$starlane_rob_year_range"
+local iv_arg "$starlane_iv"
+local coef_direction_arg "$starlane_coef_direction"
+local cv_idx_start_arg "$starlane_cv_idx_start"
+local cv_idx_end_arg "$starlane_cv_idx_end"
+local probe_only_arg "$starlane_probe_only"
+local csv_timestamp_arg "$starlane_csv_timestamp"
 
 // Validate required parameters
 if "`input_arg'" == "" | "`y_arg'" == "" | "`x_arg'" == "" | "`cv_arg'" == "" | "`panelvar_arg'" == "" | "`timevar_arg'" == "" {
@@ -201,7 +224,7 @@ if "`heterogeneity_discrete_raw'" != "" {
 	// Validate: heterogeneity_discrete must be variable names (e.g. SOE|Region), not parameter names
 	foreach _v of global heterogeneity_discrete {
 		if regexm(`"`_v'"', "^_") | regexm(`"`_v'"', "_arg$") {
-			di as error "Invalid heterogeneity_discrete: `_v'. Pass variable names (e.g. SOE|Region), not parameter names. Pos 11 = vars, pos 12 = values (e.g. SOE:1;0)."
+			di as error "Invalid heterogeneity_discrete: `_v'. Pass variable names (e.g. SOE|Region), not parameter names. Values belong in starlane_heterogeneity_discrete_values (e.g. SOE:1;0)."
 			exit 198
 		}
 	}

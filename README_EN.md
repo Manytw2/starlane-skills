@@ -54,14 +54,14 @@ You can start from a data file and a rough research idea, or provide complete va
 To see what the repository produces without bringing your own data, run the built-in demo:
 
 ```bash
-uv sync
-uv run python quick-start/run_demo.py --env python
+uv sync --project skills/starlane-regression
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env python
 ```
 
 You can also run the Stata env:
 
 ```bash
-uv run python quick-start/run_demo.py --env stata
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env stata
 ```
 
 After a run completes, user-facing results are written to `output/starlane-regression/`.
@@ -71,10 +71,10 @@ After a run completes, user-facing results are written to `output/starlane-regre
 ```bash
 git clone https://github.com/Manytw2/starlane-skills.git
 cd starlane-skills
-uv sync
+uv sync --project skills/starlane-regression
 ```
 
-Run Python scripts through `uv run python ...`.
+`starlane-regression` declares its runtime environment inside the skill directory. Run Python scripts through `uv run --project skills/starlane-regression python ...` instead of relying on the current workspace Python environment.
 
 ## Project Layout
 

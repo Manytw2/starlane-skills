@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import math
 import shutil
 import sys
@@ -14,8 +13,11 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+WORKFLOW_SCRIPTS = Path(__file__).resolve().parents[2] / "workflow"
+if str(WORKFLOW_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(WORKFLOW_SCRIPTS))
 
-SUMMARY_ARG_COUNT = 18
+from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -40,32 +42,14 @@ class RegressionArgs:
     coef_direction: str
 
     @classmethod
-    def from_list(cls, values: list[str]) -> "RegressionArgs":
-        if len(values) < SUMMARY_ARG_COUNT:
-            raise ValueError(f"Expected at least {SUMMARY_ARG_COUNT} args, got {len(values)}")
-        return cls(*[str(v) for v in values[:SUMMARY_ARG_COUNT]])
+    def from_mapping(cls, values: dict[str, object]) -> "RegressionArgs":
+        missing = [name for name in REGRESSION_ARG_NAMES if name not in values]
+        if missing:
+            raise ValueError(f"Missing regression arg field(s): {', '.join(missing)}")
+        return cls(**{name: str(values[name]) for name in REGRESSION_ARG_NAMES})
 
-    def base_list(self) -> list[str]:
-        return [
-            self.input_dta,
-            self.y,
-            self.x,
-            self.cv,
-            self.cv_fixed,
-            self.cv_min_count,
-            self.panelvar,
-            self.timevar,
-            self.meds,
-            self.mods,
-            self.heterogeneity_discrete,
-            self.heterogeneity_discrete_values,
-            self.rob_vars,
-            self.y_ln,
-            self.x_ln,
-            self.rob_year_range,
-            self.iv,
-            self.coef_direction,
-        ]
+    def as_mapping(self) -> dict[str, str]:
+        return {name: getattr(self, name) for name in REGRESSION_ARG_NAMES}
 
 
 @dataclass(frozen=True)
@@ -105,15 +89,9 @@ class RegressionSpec:
     instrument: str = ""
 
 
-def parse_cli_values(argv: list[str]) -> tuple[list[str], str | None]:
-    if len(argv) < 2:
-        raise ValueError("Expected JSON array or positional arguments")
-    first = argv[1]
-    if first.strip().startswith("["):
-        values = json.loads(first)
-        output_path = argv[2] if len(argv) > 2 else None
-        return [str(v) for v in values], output_path
-    return [str(v) for v in argv[1:]], None
+def reject_positional_args(argv: list[str]) -> None:
+    if len(argv) > 1 and not argv[1].startswith("-"):
+        raise ValueError("Positional regression args are no longer supported. Use --args-json PATH.")
 
 
 def split_words(raw: str) -> list[str]:

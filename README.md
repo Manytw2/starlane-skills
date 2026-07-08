@@ -52,14 +52,14 @@ npx skills@latest add Manytw2/starlane-skills
 如果你只是想先看这个仓库会跑出什么，可以使用内置 demo：
 
 ```bash
-uv sync
-uv run python quick-start/run_demo.py --env python
+uv sync --project skills/starlane-regression
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env python
 ```
 
 也可以选择 Stata env：
 
 ```bash
-uv run python quick-start/run_demo.py --env stata
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env stata
 ```
 
 运行完成后，用户可见结果会写入 `output/starlane-regression/`。
@@ -69,10 +69,10 @@ uv run python quick-start/run_demo.py --env stata
 ```bash
 git clone https://github.com/Manytw2/starlane-skills.git
 cd starlane-skills
-uv sync
+uv sync --project skills/starlane-regression
 ```
 
-Python 脚本请通过 `uv run python ...` 执行。
+`starlane-regression` 的运行环境声明在 skill 内部。Python 脚本请通过 `uv run --project skills/starlane-regression python ...` 执行，不要依赖当前业务项目的 Python 环境。
 
 ## 项目结构
 

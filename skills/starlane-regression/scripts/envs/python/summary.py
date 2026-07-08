@@ -18,9 +18,10 @@ from common import (
     ensure_columns,
     fail,
     format_coef,
+    load_regression_args_json,
     make_base_sample,
     prepare_regression_data,
-    parse_cli_values,
+    reject_positional_args,
     read_data,
     run_spec,
     spec_required_columns,
@@ -33,10 +34,19 @@ from common import (
 
 def main() -> int:
     try:
-        values, _ = parse_cli_values(sys.argv)
-        args = RegressionArgs.from_list(values)
-        cv_idx_start = int(values[18]) if len(values) > 18 and values[18].strip() else None
-        cv_idx_end = int(values[19]) if len(values) > 19 and values[19].strip() else None
+        reject_positional_args(sys.argv)
+        import argparse
+
+        parser = argparse.ArgumentParser(description="Run Starlane Python summary from regression_args.json.")
+        parser.add_argument("--args-json", required=True, help="Path to regression_args.json")
+        parser.add_argument("--cv-idx-start", type=int, help="Optional first control-combination index")
+        parser.add_argument("--cv-idx-end", type=int, help="Optional final control-combination index, inclusive")
+        ns = parser.parse_args(sys.argv[1:])
+
+        values = load_regression_args_json(ns.args_json)
+        args = RegressionArgs.from_mapping(values)
+        cv_idx_start = ns.cv_idx_start
+        cv_idx_end = ns.cv_idx_end
 
         y_vars = split_words(args.y)
         x_vars = split_words(args.x)

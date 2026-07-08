@@ -44,7 +44,7 @@ It is not a flat copy of the 18 regression arguments.
     "enabled": false,
     "alternative_outcomes": [],
     "alternative_explanatory_vars": [],
-    "lag_explanatory_vars": [],
+    "lag_periods": [],
     "log_y": false,
     "log_x": false,
     "sample_window": null
@@ -80,8 +80,9 @@ It is not a flat copy of the 18 regression arguments.
 
 ## Compilation Rules
 
-- The compiler emits the regression args consumed by env scripts.
+- The compiler emits `regression_args.json` as a structured JSON object consumed by env scripts. Env scripts must not consume positional arrays.
 - Module-specific regression args contributions are defined in `references/models/`.
+- `robustness.lag_periods` contains positive integer lag periods. It does not contain variable names. For example, `[1]` means "use one-period lags of all core explanatory variables."
 
 ## Control Fields
 

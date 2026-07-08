@@ -10,28 +10,6 @@ from pathlib import Path
 from typing import Any
 
 
-REGRESSION_ARG_NAMES = [
-    "input_dta",
-    "y",
-    "x",
-    "cv",
-    "cv_fixed",
-    "cv_min_count",
-    "panelvar",
-    "timevar",
-    "meds",
-    "mods",
-    "heterogeneity_discrete",
-    "heterogeneity_discrete_values",
-    "rob_vars",
-    "y_ln",
-    "x_ln",
-    "rob_year_range",
-    "iv",
-    "coef_direction",
-]
-
-
 def load_plan(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     stripped = text.lstrip()
@@ -113,20 +91,6 @@ def list_value(value: Any) -> list[str]:
     raise ValueError(f"Expected list or string, got {type(value).__name__}")
 
 
-def join_space(value: Any) -> str:
-    return " ".join(list_value(value))
-
-
-def join_pipe(value: Any) -> str:
-    return "|".join(list_value(value))
-
-
-def bool_regression_arg(value: Any, default: bool = False) -> str:
-    if value is None:
-        value = default
-    return "1" if bool(value) else "0"
-
-
 def get_dict(parent: dict[str, Any], key: str) -> dict[str, Any]:
     value = parent.get(key, {})
     if value is None:
@@ -136,44 +100,7 @@ def get_dict(parent: dict[str, Any], key: str) -> dict[str, Any]:
     return value
 
 
-def compile_rob_vars(robustness: dict[str, Any]) -> tuple[str, str, str, str]:
-    if not robustness.get("enabled", False):
-        return "", "0", "0", ""
-
-    parts: list[str] = []
-    alt_y = join_space(robustness.get("alternative_outcomes", []))
-    if alt_y:
-        parts.append(f"alt_y:{alt_y}")
-    alt_x = join_space(robustness.get("alternative_explanatory_vars", []))
-    if alt_x:
-        parts.append(f"alt_x:{alt_x}")
-    lags = join_space(robustness.get("lag_explanatory_vars", []))
-    if lags:
-        parts.append(f"lag:{lags}")
-
-    sample_window = robustness.get("sample_window")
-    if isinstance(sample_window, dict) and sample_window.get("start") is not None and sample_window.get("end") is not None:
-        rob_year_range = f"{sample_window['start']}:{sample_window['end']}"
-    else:
-        rob_year_range = ""
-
-    return "|".join(parts), bool_regression_arg(robustness.get("log_y")), bool_regression_arg(robustness.get("log_x")), rob_year_range
-
-
-def compile_heterogeneity_values(raw: Any) -> str:
-    if not raw:
-        return ""
-    if not isinstance(raw, dict):
-        raise ValueError("heterogeneity.selected_values must be an object")
-    parts: list[str] = []
-    for key, value in raw.items():
-        values = [str(v) for v in list_value(value)]
-        if values:
-            parts.append(f"{key}:{';'.join(values)}")
-    return "|".join(parts)
-
-
-def compile_plan(plan: dict[str, Any]) -> list[str]:
+def compile_plan_to_structured_args(plan: dict[str, Any]) -> dict[str, Any]:
     data = get_dict(plan, "data")
     research = get_dict(plan, "research")
     baseline = get_dict(plan, "baseline")
@@ -188,15 +115,11 @@ def compile_plan(plan: dict[str, Any]) -> list[str]:
     input_path = str(data.get("input_path", "")).strip()
     if not input_path:
         raise ValueError("data.input_path is required")
-
-    outcomes = join_space(baseline.get("outcomes", []))
-    explanatory = join_space(baseline.get("explanatory_vars", []))
-    cv = join_space(controls.get("search_pool", []))
-    cv_fixed = join_space(controls.get("always_include", []))
-    cv_min_count = str(controls.get("min_count", 0))
+    outcomes = list_value(baseline.get("outcomes", []))
+    explanatory = list_value(baseline.get("explanatory_vars", []))
+    cv = list_value(controls.get("search_pool", []))
     panelvar = str(fixed_effects.get("entity") or get_dict(data, "panel").get("entity_var") or "").strip()
     timevar = str(fixed_effects.get("time") or get_dict(data, "panel").get("time_var") or "").strip()
-
     if not outcomes:
         raise ValueError("baseline.outcomes is required")
     if not explanatory:
@@ -207,44 +130,58 @@ def compile_plan(plan: dict[str, Any]) -> list[str]:
         raise ValueError("baseline.fixed_effects.entity or data.panel.entity_var is required")
     if not timevar:
         raise ValueError("baseline.fixed_effects.time or data.panel.time_var is required")
-
-    meds = join_pipe(mechanism.get("variables", [])) if mechanism.get("enabled", False) else ""
-    mods = join_pipe(moderation.get("variables", [])) if moderation.get("enabled", False) else ""
-    heterogeneity_discrete = join_pipe(heterogeneity.get("discrete_groups", [])) if heterogeneity.get("enabled", False) else ""
-    heterogeneity_values = compile_heterogeneity_values(heterogeneity.get("selected_values", {})) if heterogeneity.get("enabled", False) else ""
-    rob_vars, y_ln, x_ln, rob_year_range = compile_rob_vars(robustness)
-    iv_vars = join_space(iv.get("instruments", [])) if iv.get("enabled", False) else ""
     coef_direction = str(research.get("expected_direction") or "positive").strip().lower()
     if coef_direction not in ("positive", "negative"):
         raise ValueError("research.expected_direction must be positive or negative")
 
-    return [
-        input_path,
-        outcomes,
-        explanatory,
-        cv,
-        cv_fixed,
-        cv_min_count,
-        panelvar,
-        timevar,
-        meds,
-        mods,
-        heterogeneity_discrete,
-        heterogeneity_values,
-        rob_vars,
-        y_ln,
-        x_ln,
-        rob_year_range,
-        iv_vars,
-        coef_direction,
-    ]
+    sample_window = robustness.get("sample_window")
+    if sample_window is not None and not isinstance(sample_window, dict):
+        raise ValueError("robustness.sample_window must be an object or null")
+
+    return {
+        "input_dta": input_path,
+        "outcomes": outcomes,
+        "explanatory_vars": explanatory,
+        "controls": {
+            "search_pool": cv,
+            "always_include": list_value(controls.get("always_include", [])),
+            "min_count": int(controls.get("min_count", 0)),
+        },
+        "panel": {
+            "entity": panelvar,
+            "time": timevar,
+        },
+        "robustness": {
+            "alternative_outcomes": list_value(robustness.get("alternative_outcomes", [])) if robustness.get("enabled", False) else [],
+            "alternative_explanatory_vars": list_value(robustness.get("alternative_explanatory_vars", [])) if robustness.get("enabled", False) else [],
+            "lag_periods": [int(value) for value in list_value(robustness.get("lag_periods", []))] if robustness.get("enabled", False) else [],
+            "log_y": bool(robustness.get("log_y", False)) if robustness.get("enabled", False) else False,
+            "log_x": bool(robustness.get("log_x", False)) if robustness.get("enabled", False) else False,
+            "sample_window": sample_window if robustness.get("enabled", False) else None,
+        },
+        "mechanism": {
+            "variables": list_value(mechanism.get("variables", [])) if mechanism.get("enabled", False) else [],
+        },
+        "moderation": {
+            "variables": list_value(moderation.get("variables", [])) if moderation.get("enabled", False) else [],
+        },
+        "heterogeneity": {
+            "discrete_groups": list_value(heterogeneity.get("discrete_groups", [])) if heterogeneity.get("enabled", False) else [],
+            "selected_values": heterogeneity.get("selected_values", {}) if heterogeneity.get("enabled", False) else {},
+        },
+        "iv": {
+            "instruments": list_value(iv.get("instruments", [])) if iv.get("enabled", False) else [],
+        },
+        "execution": {
+            "coef_direction": coef_direction,
+        },
+    }
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compile Starlane analysis plan to regression args.")
     parser.add_argument("plan_path", help="Analysis plan JSON or minimal YAML path")
     parser.add_argument("--output", "-o", help="Output regression args JSON path. Defaults to stdout.")
-    parser.add_argument("--mapping-output", help="Optional output path for name/value mapping JSON.")
     return parser.parse_args(argv)
 
 
@@ -252,11 +189,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_args(argv or sys.argv[1:])
         plan = load_plan(Path(args.plan_path))
-        values = compile_plan(plan)
-        if len(values) != 18:
-            raise ValueError(f"Compiler produced {len(values)} args, expected 18")
-
-        text = json.dumps(values, ensure_ascii=False, indent=2)
+        structured = compile_plan_to_structured_args(plan)
+        text = json.dumps(structured, ensure_ascii=False, indent=2)
         if args.output:
             out = Path(args.output)
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -265,12 +199,6 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(text)
 
-        if args.mapping_output:
-            mapping = dict(zip(REGRESSION_ARG_NAMES, values, strict=True))
-            mapping_out = Path(args.mapping_output)
-            mapping_out.parent.mkdir(parents=True, exist_ok=True)
-            mapping_out.write_text(json.dumps(mapping, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            print(f"STARLANE_REGRESSION_MAPPING_OUTPUT: {mapping_out}")
         return 0
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)

@@ -78,20 +78,20 @@ Do not ask the user to directly fill regression args.
 
 Follow `references/workflow.md`:
 
-1. Profile the data with `uv run python scripts/workflow/profile_data.py ...`.
+1. Profile the data with `uv run --project <skill-root> python scripts/workflow/run_stage.py profile ...`.
 2. Explain the inference boundary from `references/agent-language-style.md`.
 3. Initialize one `analysis_plan_draft`.
 4. Confirm each model module and write decisions into that same draft.
 5. Render a human-readable review of the same draft.
 6. Save or state the confirmed plan.
-7. Compile the plan to regression args with `uv run python scripts/workflow/compile_plan_to_regression_args.py ...`.
+7. Compile the plan to regression args with `uv run --project <skill-root> python scripts/workflow/run_stage.py compile ...`.
 8. Continue to the summary/final env workflow.
 
 The review step is not a second planning phase. It is only a readable rendering of the same `analysis_plan_draft`.
 
 ### Direct Execution Mode
 
-Use this mode when the user has already provided complete variable mappings or a regression-compatible argument list.
+Use this mode when the user has already provided complete variable mappings or a valid structured `regression_args.json`.
 
 Validate the inputs, then run the selected env.
 
@@ -165,12 +165,26 @@ If the selected env cannot execute locally, still generate the source artifact w
 
 Do not use legacy top-level wrapper paths. New implementation files live under `scripts/workflow/` and `scripts/envs/`.
 
+Use the skill-local Python project as the runtime contract:
+
+```text
+uv run --project <skill-root> python scripts/workflow/run_stage.py ...
+```
+
+Do not rely on the user's current workspace Python environment.
+
 ## Summary Stage
 
 The summary stage searches supported combinations and writes:
 
 ```text
 .starlane/combination_summary.csv
+```
+
+Run summary through JSON files, not positional regression arguments:
+
+```text
+uv run --project <skill-root> python scripts/workflow/run_stage.py summary --env python --args-json .starlane/regression_args.json
 ```
 
 The summary table is an intermediate decision artifact. Do not treat the highest score as automatic final selection.

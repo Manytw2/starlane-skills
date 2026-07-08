@@ -17,12 +17,12 @@ Starlane has one workflow and multiple envs. First decide whether the failure is
 
 ## Python Target Issues
 
-- `uv` is unavailable: install or activate `uv`, or run from an environment where project scripts can be invoked through `uv run python`.
+- `uv` is unavailable: install or activate `uv`, or run from an environment where skill scripts can be invoked through `uv run --project <skill-root> python`.
 - Data import fails: confirm the file extension is `.dta`, `.csv`, `.xlsx`, or `.xls`; for `.dta`, confirm `pyreadstat`/pandas support the file.
-- Missing dependency: confirm `numpy`, `pandas`, `pyreadstat`, and `python-docx` are installed through the project environment.
+- Missing dependency: confirm `numpy`, `pandas`, `pyreadstat`, and `python-docx` are declared in the skill-local `pyproject.toml` and run through `uv run --project <skill-root> python`.
 - Word export fails: confirm `python-docx` is installed and the output path is writable.
 - Generated source runs in the wrong directory: run it from the skill directory or use absolute paths in the generated source.
-- Summary succeeds but final fails: confirm the final args use the same 18 base arguments and a `cv_idx`/`vce_idx` from the same `combination_summary.csv`.
+- Summary succeeds but final fails: confirm final uses the same `regression_args.json` object and a `selected_candidate.json` whose `cv_idx`/`vce_idx` came from the same `combination_summary.csv`.
 
 ## Stata Target Issues
 
@@ -31,7 +31,7 @@ Common Stata errors:
 - `r(601)`: input file path is wrong or Stata cannot access the file.
 - `r(111)`: a mapped variable does not exist.
 - `r(109)`: a numeric operation was applied to a string variable.
-- `r(198)`: argument order, quoting, or option value is invalid.
+- `r(198)`: a generated Stata command has invalid syntax or an invalid option value.
 
 Missing packages:
 
@@ -50,17 +50,15 @@ Stata runtime files:
 
 Runtime maintenance:
 
-- Use `scripts/starlane-regression-runtime-status.sh` to inspect run count, disk usage, latest run, and latest failed run.
-- Use `scripts/clean-starlane-regression-runtime.sh --dry-run` before deleting runtime files.
-- Use `scripts/clean-starlane-regression-runtime.sh --success-tmp --force` to remove tmp files from successful runs.
-- Use `scripts/clean-starlane-regression-runtime.sh --keep-last 5 --force` to prune old run directories.
+- Inspect `.starlane/runtime/starlane-regression/runs/<run-id>/run.json` for run status, paths, and errors.
+- Delete old run directories only after checking their `run.json` manifests.
 - Runtime cleanup must not delete `output/starlane-regression/`.
 
 ## Summary-Final Selection Issues
 
 If summary generation succeeds but final generation fails, check that:
 
-- the same confirmed analysis plan or same 18 compiled arguments were reused
+- the same confirmed analysis plan or same compiled `regression_args.json` object was reused
 - `cv_idx` and `vce_idx` came from the same `combination_summary.csv`
 - the selected env is the same env intended for final source generation
 - the generated source file points to a writable output path

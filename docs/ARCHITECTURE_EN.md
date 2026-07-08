@@ -116,7 +116,7 @@ Regression args are the execution-layer parameter contract compiled from `analys
 Compiler entrypoint:
 
 ```text
-uv run python skills/starlane-regression/scripts/workflow/compile_plan_to_regression_args.py ...
+uv run --project skills/starlane-regression python skills/starlane-regression/scripts/workflow/run_stage.py compile ...
 ```
 
 ### Candidate Setting Selection

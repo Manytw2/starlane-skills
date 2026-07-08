@@ -8,26 +8,28 @@ The user-facing language must sound like empirical research guidance, not regres
 
 Regression args are implementation details. Use research-language labels when speaking with users.
 
-| Regression arg | User-facing wording |
+| Structured field | User-facing wording |
 | --- | --- |
 | `input_dta` | 数据文件 |
-| `y` | 被解释变量, 结果变量 |
-| `x` | 核心解释变量, 解释变量 |
-| `cv` | 控制变量池 |
-| `cv_fixed` | 每套候选设定都保留的基础控制变量, 锁变量 |
-| `cv_min_count` | 每套候选控制变量组合至少包含的控制变量数量 |
-| `panelvar` | 个体维度, 企业 ID, 样本主体 |
-| `timevar` | 时间维度, 年份 |
-| `meds` | 机制变量, 中介变量 |
-| `mods` | 调节变量 |
-| `heterogeneity_discrete` | 分组异质性变量 |
-| `heterogeneity_discrete_values` | 分组异质性的取值 |
-| `rob_vars` | 稳健性检验设置 |
-| `y_ln` | 是否对被解释变量取对数做稳健性 |
-| `x_ln` | 是否对核心解释变量取对数做稳健性 |
-| `rob_year_range` | 稳健性检验的样本年份窗口 |
-| `iv` | 工具变量候选 |
-| `coef_direction` | 预期影响方向 |
+| `outcomes` | 被解释变量, 结果变量 |
+| `explanatory_vars` | 核心解释变量, 解释变量 |
+| `controls.search_pool` | 控制变量池 |
+| `controls.always_include` | 每套候选设定都保留的基础控制变量, 锁变量 |
+| `controls.min_count` | 每套候选控制变量组合至少包含的控制变量数量 |
+| `panel.entity` | 个体维度, 企业 ID, 样本主体 |
+| `panel.time` | 时间维度, 年份 |
+| `mechanism.variables` | 机制变量, 中介变量 |
+| `moderation.variables` | 调节变量 |
+| `heterogeneity.discrete_groups` | 分组异质性变量 |
+| `heterogeneity.selected_values` | 分组异质性的取值 |
+| `robustness.alternative_outcomes` | 替换被解释变量的稳健性检验 |
+| `robustness.alternative_explanatory_vars` | 替换核心解释变量的稳健性检验 |
+| `robustness.lag_periods` | 核心解释变量滞后期数 |
+| `robustness.log_y` | 是否对被解释变量取对数做稳健性 |
+| `robustness.log_x` | 是否对核心解释变量取对数做稳健性 |
+| `robustness.sample_window` | 稳健性检验的样本年份窗口 |
+| `iv.instruments` | 工具变量候选 |
+| `execution.coef_direction` | 预期影响方向 |
 | `vce_idx` | 标准误处理方式 |
 
 ## Required Inference Boundary

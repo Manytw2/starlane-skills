@@ -41,7 +41,7 @@ Write confirmed values into:
 - `robustness.enabled`
 - `robustness.alternative_outcomes`
 - `robustness.alternative_explanatory_vars`
-- `robustness.lag_explanatory_vars`
+- `robustness.lag_periods`
 - `robustness.log_y`
 - `robustness.log_x`
 - `robustness.sample_window`
@@ -60,21 +60,27 @@ alt_x -> alt_y -> ln_x -> ln_y -> lag -> year
 | Alternative Y | `robustness.alternative_outcomes` | `y_alt ~ x + cv_selected` | `robustness_alty__{y_alt}__{x}` | `y_alt -> x` |
 | Log X | `robustness.log_x` | `y ~ ln(x_var) + cv_selected` | `robustness_lnx__{y}__{x_var}` | `x_var -> y` |
 | Log Y | `robustness.log_y` | `ln(y_var) ~ x + cv_selected` | `robustness_lny__{y_var}__{x}` | `y_var -> x` |
-| Lagged X | `robustness.lag_explanatory_vars` | `y ~ L{p}.x + cv_selected` | `robustness_lag__{y}__{x}__l{p}` | `p -> y -> x` |
+| Lagged X | `robustness.lag_periods` | `y ~ L{p}.x + cv_selected` | `robustness_lag__{y}__{x}__l{p}` | `p -> y -> x` |
 | Time Window | `robustness.sample_window` | `y ~ x + cv_selected` within the selected time window | `robustness_year__{y}__{x}` | `y -> x` |
 
 Do not generate separate `lc1/lc0` subsample robustness sections.
 
-## Regression Args
+## Compiled Contract
 
-| Analysis plan field | Regression arg |
+The compiler preserves the public contract as structured `regression_args.json`.
+Env scripts may translate these fields into internal execution variables, but users and agents should not write those internal variables directly.
+
+| Analysis plan field | Structured `regression_args.json` field |
 | --- | --- |
-| `robustness.alternative_outcomes` | `rob_vars` entry `alt_y:...` |
-| `robustness.alternative_explanatory_vars` | `rob_vars` entry `alt_x:...` |
-| `robustness.lag_explanatory_vars` | `rob_vars` entry `lag:...` |
-| `robustness.log_y` | `y_ln` |
-| `robustness.log_x` | `x_ln` |
-| `robustness.sample_window` | `rob_year_range` |
+| `robustness.alternative_outcomes` | `robustness.alternative_outcomes` |
+| `robustness.alternative_explanatory_vars` | `robustness.alternative_explanatory_vars` |
+| `robustness.lag_periods` | `robustness.lag_periods` |
+| `robustness.log_y` | `robustness.log_y` |
+| `robustness.log_x` | `robustness.log_x` |
+| `robustness.sample_window` | `robustness.sample_window` |
+
+`robustness.lag_periods` contains positive integer periods, not variable names.
+For example, `[1]` means one-period lags of all core explanatory variables.
 
 ## Boundaries
 

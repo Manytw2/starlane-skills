@@ -18,19 +18,19 @@ for the other.
 From the repository root:
 
 ```bash
-uv sync
+uv sync --project skills/starlane-regression
 ```
 
 ## Run The Python Env
 
 ```bash
-uv run python quick-start/run_demo.py --env python
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env python
 ```
 
 This is also the default:
 
 ```bash
-uv run python quick-start/run_demo.py
+uv run --project skills/starlane-regression python quick-start/run_demo.py
 ```
 
 ## Run The Stata Env
@@ -38,20 +38,20 @@ uv run python quick-start/run_demo.py
 Install Stata locally, then run:
 
 ```bash
-uv run python quick-start/run_demo.py --env stata
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env stata
 ```
 
 If Stata is not on your `PATH`, set `STARLANE_STATA_BIN`:
 
 ```bash
 STARLANE_STATA_BIN=/Applications/Stata/StataMP.app/Contents/MacOS/stata-mp \
-  uv run python quick-start/run_demo.py --env stata
+  uv run --project skills/starlane-regression python quick-start/run_demo.py --env stata
 ```
 
 ## Run Both Envs
 
 ```bash
-uv run python quick-start/run_demo.py --env both
+uv run --project skills/starlane-regression python quick-start/run_demo.py --env both
 ```
 
 `both` runs the Python env and then the Stata env. It does not compare their
