@@ -164,7 +164,7 @@ def relative_to_root(context: RunContext, path: Path) -> str:
 def default_logs(context: RunContext) -> dict[str, str]:
     logs = {"progress": relative_to_root(context, context.logs_dir / "progress.jsonl")}
     if context.stage == "summary":
-        logs["summary"] = relative_to_root(context, context.logs_dir / "summary.log")
+        logs["chunks"] = relative_to_root(context, context.logs_dir / "chunks")
     if context.stage == "final":
         logs["generate_final_source"] = relative_to_root(context, context.logs_dir / "generate_final_source.log")
         logs["final"] = relative_to_root(context, context.logs_dir / "final.log")

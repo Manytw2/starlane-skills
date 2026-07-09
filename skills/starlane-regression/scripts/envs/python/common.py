@@ -101,6 +101,10 @@ def read_data(path: str) -> pd.DataFrame:
         return pd.read_csv(p)
     if suffix in (".xls", ".xlsx"):
         return pd.read_excel(p)
+    if suffix == ".pkl":
+        # Workflow-internal warmup cache written by the summary orchestrator;
+        # not a user-facing input format.
+        return pd.read_pickle(p)
     raise ValueError(f"Unsupported input format: {path}")
 
 

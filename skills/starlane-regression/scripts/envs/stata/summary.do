@@ -208,6 +208,9 @@ if "`meds_raw'" != "" {
 	local meds_parsed = subinstr("`meds_raw'", "|", " ", .)
 	global meds "`meds_parsed'"
 }
+// Canonical ModelPlan (model_plan.build_specs) keeps only the first mechanism
+// variable in the summary chain; the full list still enters the sample pool.
+global meds_run : word 1 of $meds
 
 global mods ""
 local mods_raw = trim("`mods_arg'")
@@ -771,7 +774,7 @@ forvalues cv_idx = `loop_start'/`loop_end' {
 		}
 
 		// Mediation
-		foreach med_var of global meds {
+		foreach med_var of global meds_run {
 			foreach y of global y {
 				foreach x of global x {
 					local ++m

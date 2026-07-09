@@ -13,20 +13,15 @@ from pathlib import Path
 from typing import Any
 
 from compile_plan_to_regression_args import compile_plan_to_structured_args, load_plan
-from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json
+from contracts import load_regression_args_json, load_selection_json
 from profile_data import build_profile
 from runtime import append_command, clean_success_tmp, create_run_context, mark_failed, mark_success, publish_outputs, update_manifest
-from model_plan import RegressionArgsProxy, build_model_plan
-from stata_emit import render_stata_model_plan_config
-from verify_model_plan_drift import check_summary_header
+from summary_parallel import run_summary
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_ENV_SCRIPTS = SKILL_ROOT / "scripts" / "envs" / "python"
 STATA_ENV_SCRIPTS = SKILL_ROOT / "scripts" / "envs" / "stata"
-STATA_ARG_GLOBAL_NAMES = {
-    "heterogeneity_discrete_values": "het_disc_vals",
-}
 
 
 def find_stata() -> str | None:
@@ -54,10 +49,6 @@ def stata_status() -> dict[str, str | bool | None]:
         "path": stata_bin,
         "configured_path": os.environ.get("STARLANE_STATA_BIN"),
     }
-
-
-def quote_stata_arg(value: str) -> str:
-    return '"' + value.replace('"', '""') + '"'
 
 
 def run_command(cmd: list[str], *, cwd: Path, env: dict[str, str], log_path: Path) -> None:
@@ -97,41 +88,6 @@ def publish_run_outputs(context: Any) -> dict[str, str]:
     for name in published.values():
         print(f"STARLANE_PUBLISHED: {name}")
     return published
-
-
-def write_stata_summary_config(path: Path, args_values: dict[str, str], export_dir: Path, tmp_dir: Path, cv_idx_start: int | None, cv_idx_end: int | None) -> None:
-    lines = [
-        f'global STARLANE_EXPORT "{export_dir.as_posix()}"',
-        f'global STARLANE_TMP "{tmp_dir.as_posix()}"',
-    ]
-    for name in REGRESSION_ARG_NAMES:
-        stata_name = STATA_ARG_GLOBAL_NAMES.get(name, name)
-        lines.append(f'global starlane_{stata_name} {quote_stata_arg(args_values[name])}')
-    lines.extend(
-        [
-            f'global starlane_cv_idx_start {quote_stata_arg("" if cv_idx_start is None else str(cv_idx_start))}',
-            f'global starlane_cv_idx_end {quote_stata_arg("" if cv_idx_end is None else str(cv_idx_end))}',
-            'global starlane_probe_only ""',
-            'global starlane_csv_timestamp ""',
-        ]
-    )
-    lines.append("")
-    lines.append(render_stata_model_plan_config(build_model_plan(RegressionArgsProxy(args_values))).rstrip())
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def write_stata_summary_runner(path: Path, config_path: Path) -> None:
-    path.write_text(
-        "\n".join(
-            [
-                f'do "{config_path.as_posix()}"',
-                f'do "{(STATA_ENV_SCRIPTS / "summary.do").as_posix()}"',
-                "exit",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
 
 def run_stata_batch(stata_bin: str, do_file: Path, cwd: Path) -> None:
@@ -176,7 +132,6 @@ def command_status(ns: argparse.Namespace) -> int:
 
 def command_summary(ns: argparse.Namespace) -> int:
     context = create_run_context(Path.cwd(), ns.env, "summary")
-    env = {**os.environ, **context.env_vars()}
     try:
         args_path = Path(ns.args_json).resolve()
         args_values = load_regression_args_json(args_path)
@@ -193,36 +148,20 @@ def command_summary(ns: argparse.Namespace) -> int:
                 },
             },
         )
-        if ns.env == "python":
-            cmd = [
-                sys.executable,
-                str(PYTHON_ENV_SCRIPTS / "summary.py"),
-                "--args-json",
-                str(args_path),
-            ]
-            if ns.cv_idx_start is not None:
-                cmd.extend(["--cv-idx-start", str(ns.cv_idx_start)])
-            if ns.cv_idx_end is not None:
-                cmd.extend(["--cv-idx-end", str(ns.cv_idx_end)])
-            log_path = context.logs_dir / "summary.log"
-            append_command(context, cmd, log_path)
-            run_command(cmd, cwd=Path.cwd(), env=env, log_path=log_path)
-        else:
+        stata_bin = None
+        if ns.env == "stata":
             stata_bin = find_stata()
             if not stata_bin:
                 raise RuntimeError("No Stata binary found. Set STARLANE_STATA_BIN or install Stata.")
-            config = context.generated_dir / "stata_summary_config.do"
-            runner = context.generated_dir / "run_stata_summary.do"
-            write_stata_summary_config(config, args_values, context.outputs_dir, context.tmp_dir, ns.cv_idx_start, ns.cv_idx_end)
-            write_stata_summary_runner(runner, config)
-            append_command(context, [stata_bin, "-b", "do", str(runner)], context.logs_dir / f"{runner.stem}.log")
-            run_stata_batch(stata_bin, runner, context.logs_dir)
-
-        summary_path = context.outputs_dir / "combination_summary.csv"
-        if not summary_path.exists():
-            raise RuntimeError(f"Summary stage finished without producing {summary_path}")
-        verified_columns = check_summary_header(args_values, summary_path)
-        print(f"STARLANE_PLAN_VERIFIED: {verified_columns} columns match the canonical ModelPlan")
+        summary_path = run_summary(
+            context=context,
+            env=ns.env,
+            args_values=args_values,
+            args_path=args_path,
+            cv_idx_start=ns.cv_idx_start,
+            cv_idx_end=ns.cv_idx_end,
+            stata_bin=stata_bin,
+        )
 
         chunked = ns.cv_idx_start is not None or ns.cv_idx_end is not None
         if chunked:

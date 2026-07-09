@@ -1,72 +1,8 @@
 # Workflow
 
-`starlane-regression` implements one regression delivery workflow with multiple envs.
+This reference defines the module-guidance rhythm and the shared execution contract that every `starlane-regression` env must follow.
 
-It guides undergraduate economics and management students from data to a reproducible Starlane regression run without asking them to directly fill regression parameters.
-
-```text
-user data + variable mapping
--> initialize or validate analysis_plan
--> choose env: Python or Stata
--> compile regression args
--> summary stage
--> combination_summary.csv
--> choose cv_idx and vce_idx
--> final source generation
--> generated source artifact for the selected env
--> run generated source artifact when possible
--> regression output
--> Agent explains reproducibility from runtime evidence when relevant
-```
-
-Python and Stata are envs, not separate user workflows.
-
-If the user has not selected an env, ask before running.
-
-## Entry Modes
-
-Guided setup mode starts from a data file, partial variables, or a research idea.
-
-Direct execution mode starts from complete variable mappings or a valid structured `regression_args.json`.
-
-In guided setup mode, do not ask the user to directly fill regression args. Maintain one `analysis_plan_draft`, confirm each model module into that draft, then compile the confirmed plan.
-
-In direct execution mode, validate the supplied inputs, choose the env, then run the shared execution flow.
-
-## One Plan Draft
-
-The agent must maintain one `analysis_plan_draft` throughout guided setup.
-
-Do not run:
-
-```text
-module guidance -> separate plan drafting -> regression args
-```
-
-Run:
-
-```text
-data profile -> initialize analysis_plan_draft -> confirm each model module into that same draft -> review draft -> compile regression args -> execute
-```
-
-The final review is a human-readable view of the same draft, not a second planning phase.
-
-## Guided Setup Flow
-
-1. Read the data and generate a data profile.
-2. Explain the inference boundary from `agent-language-style.md`.
-3. Initialize `analysis_plan_draft.data`.
-4. Confirm the research main line.
-5. Confirm baseline regression.
-6. Confirm robustness checks.
-7. Confirm mechanism or mediation checks.
-8. Confirm moderation checks.
-9. Confirm heterogeneity checks.
-10. Confirm IV checks.
-11. Render the same draft for review.
-12. Save the confirmed plan.
-13. Compile regression args.
-14. Run the shared execution flow.
+Entry modes, the guided setup flow, plan-draft rules, stage commands, and candidate-selection ethics are owned by `SKILL.md`. This file defines what module guidance and envs must agree on.
 
 ## Module Rhythm
 
@@ -210,27 +146,8 @@ The summary stage enumerates control-variable subsets and VCE choices.
 - `vce_idx` identifies one VCE choice.
 - Final selection uses the same `cv_idx + vce_idx` pair from the current `combination_summary.csv`.
 
-Each row in `combination_summary.csv` is a candidate setting, not a single
-model. A candidate setting contains:
-
-- one shared control-variable combination identified by `cv_idx`
-- one VCE choice identified by `vce_idx`
-- the results for all enabled model sections under that same control-variable
-  combination and VCE choice
-
-Do not describe the workflow as if baseline, robustness, mechanism,
-moderation, heterogeneity, or IV sections independently choose different
-control-variable combinations inside the same candidate row.
-
-Before large summary runs, estimate workload in terms of:
-
-```text
-candidate control-variable combinations * 4 VCE choices * enabled model-section regressions
-```
-
-Explain the concrete recommended control setting and workload to the user. Do
-not expose internal control-count heuristics as something the user needs to
-understand before continuing.
+What a candidate row means, how to discuss it with the user, and how to weigh
+`score` are defined in `SKILL.md`.
 
 VCE choices are fixed:
 
@@ -291,10 +208,15 @@ Env scripts do not manage the full runtime lifecycle. They write outputs to
 (`scripts/workflow/run_stage.py`) creates the run directory, sets those paths,
 collects logs, updates `run.json`, verifies the summary header against the
 canonical ModelPlan, publishes user-facing outputs on success, and cleans
-`tmp/` after successful runs.
+`tmp/` after successful runs. Publish rules for full versus chunked runs are
+stated in `SKILL.md`.
 
-Chunked summary runs (`--cv-idx-start/--cv-idx-end`) produce partial tables.
-They stay in the run's `outputs/` directory and are not published.
+The runner may execute the summary stage as several env-script worker
+processes, each covering one contiguous `cv_idx` range, and merge the part
+tables afterwards. Env summary scripts therefore stay single-range
+executables: given an optional `cv_idx` range they compute exactly that range
+and write one table for it. Chunk scheduling, worker isolation, part merging,
+sorting, and publishing belong to the runner, not to env scripts.
 
 Stata env can override these paths by setting globals before running `scripts/envs/stata/summary.do`:
 

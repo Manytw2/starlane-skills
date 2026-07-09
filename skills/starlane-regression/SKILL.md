@@ -76,12 +76,12 @@ Use this mode when the user provides only a data file, partial variables, or a r
 
 Do not ask the user to directly fill regression args.
 
-Follow `references/workflow.md`:
+Follow these steps, using the module rhythm and default module policy from `references/workflow.md`:
 
 1. Profile the data with `uv run --project <skill-root> python scripts/workflow/run_stage.py profile ...`.
 2. Explain the inference boundary from `references/agent-language-style.md`.
 3. Initialize one `analysis_plan_draft`.
-4. Confirm each model module and write decisions into that same draft.
+4. Confirm the research main line, then each model module in order — baseline, robustness, mechanism/mediation, moderation, heterogeneity, IV — writing each confirmed decision into that same draft.
 5. Render a human-readable review of the same draft.
 6. Save or state the confirmed plan.
 7. Compile the plan to regression args with `uv run --project <skill-root> python scripts/workflow/run_stage.py compile ...`.
@@ -191,17 +191,21 @@ uv run --project <skill-root> python scripts/workflow/run_stage.py summary --env
 
 The summary table is an intermediate decision artifact. Do not treat the highest score as automatic final selection.
 
+The summary stage runs control-variable subsets in parallel worker processes when the machine allows. This is internal behavior with no extra flags; the workload decision is printed as a `STARLANE_JOBS:` line, and chunk-level progress events are appended to the run's `logs/progress.jsonl`. Rows in `combination_summary.csv` are sorted by `score` descending in both envs.
+
 Before large summary runs, estimate and explain the rough workload:
 
 ```text
 candidate control-variable combinations * 4 VCE choices * enabled model-section regressions
 ```
 
+Explain the concrete recommended control setting and workload to the user in research language. Do not expose internal control-count heuristics as something the user needs to understand before continuing.
+
 ## Model Selection, Ethics, And Boundaries
 
 Starlane is a reproducible empirical-analysis workflow, not a significance factory.
 
-Each row in `combination_summary.csv` is a candidate setting: one shared control-variable combination, one VCE choice, and all enabled model-section results under that same setting.
+Each row in `combination_summary.csv` is a candidate setting: one shared control-variable combination, one VCE choice, and all enabled model-section results under that same setting. Do not describe the workflow as if baseline, robustness, mechanism, moderation, heterogeneity, or IV sections independently choose different control-variable combinations inside the same candidate row.
 
 Scoring in `combination_summary.csv` is a search aid. It helps sort candidate settings, but it is not proof that the highest-scoring setting is the best research design.
 
