@@ -19,21 +19,15 @@ An Agent Skill for turning empirical research ideas into reproducible regression
 
 Starlane helps with the coding and workflow burden behind empirical analysis: model setup, combination search, result tables, and reproducibility artifacts. It does not manufacture significance, conclusions, or research designs.
 
-## What It Does
-
 ![Starlane workflow](assets/starlane-workflow.png)
 
-The current release provides one production skill: `starlane-regression`.
+## Skill Index
 
-It is designed for common empirical-analysis workflows in economics, finance, management, and related social-science projects. Starting from a data file and a research idea, the skill guides the user through an analysis plan, enumerates supported model combinations, helps select a candidate result, and generates final outputs with reproducible source code.
+The following skills under `skills/` can be invoked:
 
-The first version focuses on:
-
-- data profiling and variable-role suggestions
-- baseline regressions, control-variable search, and standard-error choices
-- robustness checks, mechanism checks, moderation, heterogeneity, and IV-related checks
-- Python and Stata execution environments
-- candidate summary tables, final regression output, and reproducible source code
+| Skill | Status | Purpose | Trigger |
+| --- | --- | --- | --- |
+| [`starlane-regression`](skills/starlane-regression/SKILL.md) | Stable | Regression workflow for empirical research in economics and management: data profiling, guided analysis planning, candidate-combination enumeration and scoring, final regression output with reproducible source code, Python / Stata execution envs | `/starlane-regression`, or describe needs such as "regression analysis", "baseline regression", or "robustness checks" |
 
 ## Quick Start
 

@@ -196,7 +196,7 @@ skills/starlane-regression/
       contracts.py
       model_plan.py
       stata_config.py
-      verify_model_plan_drift.py
+      plan_drift_check.py
       profile_data.py
       compile_plan.py
       runtime.py
@@ -219,7 +219,7 @@ Responsibilities:
 - `scripts/workflow/contracts.py`: JSON contract validation for regression args and candidate selection.
 - `scripts/workflow/model_plan.py`: the single source of truth for model enumeration; answers "what should run".
 - `scripts/workflow/stata_config.py`: renders the ModelPlan into Stata configuration.
-- `scripts/workflow/verify_model_plan_drift.py`: verifies summary artifacts against the canonical ModelPlan.
+- `scripts/workflow/plan_drift_check.py`: verifies summary artifacts against the canonical ModelPlan.
 - Remaining `scripts/workflow/` files: data profiling, plan compilation, and runtime lifecycle management.
 - `scripts/envs/`: Python / Stata summary, final, and source-generation logic; answers "how this env runs it".
 

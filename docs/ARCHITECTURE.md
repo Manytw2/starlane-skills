@@ -196,7 +196,7 @@ skills/starlane-regression/
       contracts.py
       model_plan.py
       stata_config.py
-      verify_model_plan_drift.py
+      plan_drift_check.py
       profile_data.py
       compile_plan.py
       runtime.py
@@ -219,7 +219,7 @@ skills/starlane-regression/
 - `scripts/workflow/contracts.py`：regression args 和候选选择的 JSON 契约校验。
 - `scripts/workflow/model_plan.py`：模型枚举的单一事实来源，回答"该跑什么"。
 - `scripts/workflow/stata_config.py`：把 ModelPlan 渲染成 Stata 配置。
-- `scripts/workflow/verify_model_plan_drift.py`：校验 summary 产物与 ModelPlan 是否漂移。
+- `scripts/workflow/plan_drift_check.py`：校验 summary 产物与 ModelPlan 是否漂移。
 - `scripts/workflow/` 其余：数据画像、plan 编译和 runtime 生命周期管理。
 - `scripts/envs/`：Python / Stata 的 summary、final 和源码生成逻辑，回答"这个 env 怎么跑"。
 

@@ -14,13 +14,14 @@
 | 对象 | 规则 | 示例 |
 |---|---|---|
 | 目录 / skill | kebab-case | `starlane-regression` |
-| 库模块（被 import） | 名词，snake_case | `contracts.py`、`model_plan.py`、`stata_config.py` |
+| 库模块（被 import） | 按职责命名，snake_case：概念职责用名词，动作职责用动作名词短语 | `contracts.py`、`model_plan.py`、`plan_drift_check.py` |
 | 可执行入口脚本 | 动词_对象（见 §2） | `run_stage.py`、`compile_plan.py` |
 | Shell 脚本 | kebab-case，动词在前 | `clean-runtime.sh` |
 | 产物文件 | 跨 env 同名同风格 | `final_result.docx`、`generated_regression.py` / `.do` |
 
 - `envs/python/` 与 `envs/stata/` 的文件集应左右对称（同职责同名，仅扩展名不同）；无法对称时在 `docs/ARCHITECTURE.md` 说明。
-- 库模块用名词，入口脚本用动词短语或 stage 前缀，二者不混用。
+- 定性以主要消费方式为准：主要被 import 的是库模块，附带 `main()` 调试入口不改变定性；祈使式"动词_对象"专属于可执行入口脚本，二者不混用。
+- 库模块职责本身是动作时，用动作名词短语而非祈使式动词：`plan_drift_check.py` 而非 `verify_plan_drift.py`（参照 Django `validators.py`、pip `self_outdated_check.py` 的惯例）。
 
 ## 2. Stage 链路命名
 

@@ -25,7 +25,7 @@ from pathlib import Path
 from model_plan import RegressionArgsProxy, build_model_plan
 from runtime import RunContext, append_command, update_manifest
 from stata_config import render_stata_summary_config, render_stata_summary_runner
-from verify_model_plan_drift import check_summary_header
+from plan_drift_check import check_summary_header
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]

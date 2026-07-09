@@ -154,17 +154,40 @@ def set_cell_text(cell, text: str, *, bold: bool = False, align: int | None = No
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
 
-def set_note_cell_borders(cell) -> None:
+def _set_cell_borders(cell, edges: dict[str, tuple[str, str]]) -> None:
+    """Set specific cell borders; edges maps edge name -> (val, sz in eighths of a point)."""
     tc_pr = cell._tc.get_or_add_tcPr()
     for existing in tc_pr.findall(qn("w:tcBorders")):
         tc_pr.remove(existing)
     borders = OxmlElement("w:tcBorders")
-    for edge, value in (("top", "single"), ("left", "nil"), ("bottom", "nil"), ("right", "nil")):
+    for edge in ("top", "left", "bottom", "right"):
+        value, size = edges.get(edge, ("nil", "0"))
         element = OxmlElement(f"w:{edge}")
         element.set(qn("w:val"), value)
-        element.set(qn("w:color"), "000000")
+        if value != "nil":
+            element.set(qn("w:sz"), size)
+            element.set(qn("w:color"), "000000")
         borders.append(element)
     tc_pr.append(borders)
+
+
+# Booktabs-style rule weights in eighths of a point: heavy top/bottom, light midrule.
+RULE_HEAVY = "12"
+RULE_LIGHT = "6"
+
+
+def set_row_rules(row, *, top: str | None = None, bottom: str | None = None) -> None:
+    edges: dict[str, tuple[str, str]] = {}
+    if top:
+        edges["top"] = ("single", top)
+    if bottom:
+        edges["bottom"] = ("single", bottom)
+    for cell in row.cells:
+        _set_cell_borders(cell, edges)
+
+
+def set_note_cell_borders(cell) -> None:
+    _set_cell_borders(cell, {"top": ("single", RULE_HEAVY)})
 
 
 def add_table_title(doc: Document, table_num: int, title: str) -> None:
@@ -177,15 +200,17 @@ def add_table_title(doc: Document, table_num: int, title: str) -> None:
 def add_regression_table(doc: Document, table_num: int, title: str, rows: list[dict[str, str]]) -> None:
     add_table_title(doc, table_num, title)
     table = doc.add_table(rows=1, cols=len(rows) + 1)
-    table.style = "Table Grid"
     set_cell_text(table.rows[0].cells[0], "", align=WD_ALIGN_PARAGRAPH.CENTER)
     for idx, row in enumerate(rows, start=1):
         set_cell_text(table.rows[0].cells[idx], model_label(row, idx), align=WD_ALIGN_PARAGRAPH.CENTER)
+    set_row_rules(table.rows[0], top=RULE_HEAVY)
 
-    dep_row = table.add_row().cells
+    dep_row_obj = table.add_row()
+    dep_row = dep_row_obj.cells
     set_cell_text(dep_row[0], "")
     for idx, row in enumerate(rows, start=1):
         set_cell_text(dep_row[idx], row["depvar"], align=WD_ALIGN_PARAGRAPH.CENTER)
+    set_row_rules(dep_row_obj, bottom=RULE_LIGHT)
 
     for variable in ordered_variables(rows):
         coef_row = table.add_row().cells
@@ -236,14 +261,16 @@ DESCRIPTIVE_HEADERS = ["VarName", "Obs", "Mean", "SD", "Min", "Median", "Max"]
 def add_descriptive_table(doc: Document, table_num: int, stats_rows: list[list[str]]) -> None:
     add_table_title(doc, table_num, "描述性统计")
     table = doc.add_table(rows=1, cols=len(DESCRIPTIVE_HEADERS))
-    table.style = "Table Grid"
     for idx, header in enumerate(DESCRIPTIVE_HEADERS):
         set_cell_text(table.rows[0].cells[idx], header, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    set_row_rules(table.rows[0], top=RULE_HEAVY, bottom=RULE_LIGHT)
     for stats in stats_rows:
-        cells = table.add_row().cells
+        row_obj = table.add_row()
+        cells = row_obj.cells
         set_cell_text(cells[0], stats[0])
         for idx, value in enumerate(stats[1:], start=1):
             set_cell_text(cells[idx], value, align=WD_ALIGN_PARAGRAPH.CENTER)
+    set_row_rules(table.rows[-1], bottom=RULE_HEAVY)
 
 
 def write_docx(

@@ -53,7 +53,7 @@ uv run --project skills/starlane-regression python quick-start/run_demo.py --env
 - 改输出路径或发布行为 → 同步 `SKILL.md`、`references/workflow.md`、`docs/ARCHITECTURE.md`、`docs/ARCHITECTURE_EN.md`、`README.md`、`README_EN.md`、`quick-start/README.md`。
 - 改模型模块或列契约 → 同步 `references/models/*`、`references/supported-methods.md`、`SKILL.md` 的 description 与 Scope，并保证与 `model_plan.py` 一致。
 - 起或改任何名字（文件名、字段、缩写、section/列 token）→ 以 `docs/CONVENTIONS.md` 为准；新增命名约定沉淀回其相应小节。
-- 中英双语文档（README、ARCHITECTURE）必须成对更新。
+- 中英双语文档（README、ARCHITECTURE）必须成对更新。成对指事实与结构对齐，不要求逐句直译：README 的定位语与语气差异是有意设计——中文面向传播，口语化、亲民（如带引号的"一键显著"是自嘲式称呼，不是能力承诺）；英文面向学术场景，表述收敛严谨。不要把这种语气差异当作不一致来"修复"。
 - 新的踩坑经验和行为约定沉淀回本文件。
 
 ## 运行卫生
