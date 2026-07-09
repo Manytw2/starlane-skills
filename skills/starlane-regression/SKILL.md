@@ -97,42 +97,6 @@ Validate the inputs, then run the selected env.
 
 Even in direct mode, explain important fields in research language when reporting back to the user.
 
-## Language Rules
-
-Use research-language labels when speaking with the user.
-
-Do not say:
-
-```text
-x: Attention 对吗？
-```
-
-Say:
-
-```text
-基准回归里，核心解释变量选择 Attention，可以吗？
-```
-
-Do not say:
-
-```text
-meds: Charge|Subsidy|lnCSR 对吗？
-```
-
-Say:
-
-```text
-机制检验里，机制变量选择 Charge、Subsidy、lnCSR，可以吗？
-```
-
-Before suggesting variable roles, say:
-
-```text
-我先根据数据里的列名和基本结构做一个初步判断。因为变量名是你在数据中命名的，我只能从名称、类型、缺失情况和常见经管研究习惯推断变量角色，不能保证理解完全正确；如果某个变量的实际含义和我的推断不一致，以你的解释为准。
-```
-
-Regression field names may appear in reproducibility explanations, generated source explanations, and regression args. They should not be the primary wording for user confirmation.
-
 ## Analysis Plan
 
 In guided setup mode, maintain one `analysis_plan_draft` grouped by model module:
