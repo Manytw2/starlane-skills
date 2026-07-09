@@ -41,7 +41,7 @@ Moderation tests interactions with continuous moderators.
 
 | Block | Formula | Column | Records | Order |
 | --- | --- | --- | --- | --- |
-| Interaction | `y ~ std(x) * std(mod) + cv_selected` | `moderation__{mod}__{y}__{x}` | interaction coefficient | `mod -> y -> x` |
+| Interaction | `y ~ std(x) * std(mod) + cv_selected` | `mod__{mod}__{y}__{x}` | interaction coefficient | `mod -> y -> x` |
 
 Count:
 

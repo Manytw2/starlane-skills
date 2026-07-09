@@ -116,7 +116,7 @@ n_y * n_x * 2
 
 | Analysis plan field | Regression arg |
 | --- | --- |
-| `data.input_path` | `input_dta` |
+| `data.input_path` | `data_path` |
 | `baseline.outcomes` | `y` |
 | `baseline.explanatory_vars` | `x` |
 | `baseline.controls.search_pool` | `cv` |

@@ -42,8 +42,8 @@ For each mechanism variable `med`, run:
 
 | Block | Formula | Column | Records | Order |
 | --- | --- | --- | --- | --- |
-| Total effect | `y ~ x + cv_selected` | `mediation__{med}__{y}__{x}` | `x` | `med -> y -> x` |
-| Path a | `med ~ x + cv_selected` | `mediation__{med}__M__{x}` | `x` | `med -> x` |
+| Total effect | `y ~ x + cv_selected` | `med__{med}__{y}__{x}` | `x` | `med -> y -> x` |
+| Path a | `med ~ x + cv_selected` | `med__{med}__M__{x}` | `x` | `med -> x` |
 
 Count:
 

@@ -1,6 +1,7 @@
-"""Python summary env for Starlane regression.
+"""Summary stage (python env): regression args -> combination summary.
 
-The output contract matches combination_summary.csv.
+IN:  regression_args.json + 输入数据
+OUT: combination_summary.csv（候选设定汇总表，写入 STARLANE_EXPORT）
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ from common import (
     load_regression_args_json,
     make_base_sample,
     prepare_regression_data,
-    reject_positional_args,
     read_data,
     run_spec_attempt,
     spec_required_columns,
@@ -49,7 +49,6 @@ class ProgressLogger:
 def main() -> int:
     progress = ProgressLogger(os.environ.get("STARLANE_PROGRESS_LOG"))
     try:
-        reject_positional_args(sys.argv)
         import argparse
 
         parser = argparse.ArgumentParser(description="Run Starlane Python summary from regression_args.json.")
@@ -72,7 +71,7 @@ def main() -> int:
 
         optional_originals = split_words(args.meds) + split_words(args.mods) + split_words(args.iv)
         required = [*y_vars, *x_vars, *cv_all, args.panelvar, args.timevar, *optional_originals]
-        df = read_data(args.input_dta)
+        df = read_data(args.data_path)
         ensure_columns(df, required)
         df = prepare_regression_data(df, args)
         df, panelvar = encode_panel_if_needed(df, args.panelvar)

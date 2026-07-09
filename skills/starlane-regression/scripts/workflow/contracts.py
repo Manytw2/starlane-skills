@@ -7,29 +7,30 @@ from pathlib import Path
 from typing import Any
 
 
+# Flat regression args: execution-layer contract. Abbreviations per docs/CONVENTIONS.md §5.
 REGRESSION_ARG_NAMES = (
-    "input_dta",
-    "y",
-    "x",
-    "cv",
-    "cv_fixed",
-    "cv_min_count",
-    "panelvar",
-    "timevar",
-    "meds",
-    "mods",
-    "heterogeneity_discrete",
-    "heterogeneity_discrete_values",
-    "rob_vars",
-    "y_ln",
-    "x_ln",
-    "rob_year_range",
-    "iv",
-    "coef_direction",
+    "data_path",       # input data file path (.dta/.csv/.xlsx/.xls)
+    "y",               # outcome variables
+    "x",               # explanatory variables
+    "cv",              # control variables (search pool)
+    "cv_fixed",        # always-included control variables
+    "cv_min_count",    # minimum optional-control count
+    "panelvar",        # panel entity variable (Stata xtset term)
+    "timevar",         # time variable (Stata xtset term)
+    "meds",            # mediator variables
+    "mods",            # moderator variables
+    "het_disc",        # heterogeneity: discrete group variables
+    "het_disc_vals",   # heterogeneity: selected values per group variable
+    "rob_vars",        # robustness spec (alt_y/alt_x/ln_y/ln_x/lag)
+    "ln_y",            # robustness: auto ln(y) toggle
+    "ln_x",            # robustness: auto ln(x) toggle
+    "rob_year_range",  # robustness: sample time window "start:end"
+    "iv",              # instrumental variables
+    "coef_direction",  # expected coefficient direction (positive/negative)
 )
 
 STRUCTURED_REGRESSION_ARG_FIELDS = (
-    "input_dta",
+    "data_path",
     "outcomes",
     "explanatory_vars",
     "controls",
@@ -42,7 +43,7 @@ STRUCTURED_REGRESSION_ARG_FIELDS = (
     "execution",
 )
 SELECTION_FIELDS = ("cv_idx", "vce_idx")
-REQUIRED_NONEMPTY_REGRESSION_ARGS = ("input_dta", "y", "x", "cv", "panelvar", "timevar", "coef_direction")
+REQUIRED_NONEMPTY_REGRESSION_ARGS = ("data_path", "y", "x", "cv", "panelvar", "timevar", "coef_direction")
 ROB_KEYS = {"alt_y", "alt_x", "ln_y", "ln_x", "lag"}
 BOOL_TEXT_VALUES = {"", "0", "1", "yes", "no", "true", "false", "是", "否"}
 
@@ -131,7 +132,7 @@ def validate_rob_vars(raw: str) -> None:
                 _parse_positive_int(period, "regression_args.rob_vars lag period")
 
 
-def validate_heterogeneity_discrete_values(raw: str) -> None:
+def validate_het_disc_vals(raw: str) -> None:
     if not raw.strip():
         return
     for item in raw.split("|"):
@@ -139,20 +140,20 @@ def validate_heterogeneity_discrete_values(raw: str) -> None:
         if not item:
             continue
         if ":" not in item:
-            raise ValueError(f"Invalid regression_args.heterogeneity_discrete_values: expected var:v1;v2 segment, got {item!r}")
+            raise ValueError(f"Invalid regression_args.het_disc_vals: expected var:v1;v2 segment, got {item!r}")
         key, values = item.split(":", 1)
         if not key.strip():
-            raise ValueError("Invalid regression_args.heterogeneity_discrete_values: empty variable name")
+            raise ValueError("Invalid regression_args.het_disc_vals: empty variable name")
         cleaned_values = [value.strip() for value in values.split(";") if value.strip()]
         if not cleaned_values:
-            raise ValueError(f"Invalid regression_args.heterogeneity_discrete_values: no values for {key.strip()!r}")
+            raise ValueError(f"Invalid regression_args.het_disc_vals: no values for {key.strip()!r}")
 
 
 def _robustness_to_flat(data: Any) -> tuple[str, str, str, str]:
     robustness = _require_object(data, "regression_args.robustness")
     _check_exact_keys(
         robustness,
-        ("alternative_outcomes", "alternative_explanatory_vars", "lag_periods", "log_y", "log_x", "sample_window"),
+        ("alternative_outcomes", "alternative_explanatory_vars", "lag_periods", "ln_y", "ln_x", "sample_window"),
         "regression_args.robustness",
     )
     parts: list[str] = []
@@ -174,10 +175,10 @@ def _robustness_to_flat(data: Any) -> tuple[str, str, str, str]:
         _check_exact_keys(window, ("start", "end"), "regression_args.robustness.sample_window")
         rob_year_range = f"{window['start']}:{window['end']}"
 
-    return "|".join(parts), _bool_arg(robustness["log_y"], "regression_args.robustness.log_y"), _bool_arg(robustness["log_x"], "regression_args.robustness.log_x"), rob_year_range
+    return "|".join(parts), _bool_arg(robustness["ln_y"], "regression_args.robustness.ln_y"), _bool_arg(robustness["ln_x"], "regression_args.robustness.ln_x"), rob_year_range
 
 
-def _heterogeneity_values_to_flat(raw: Any) -> str:
+def _het_disc_vals_to_flat(raw: Any) -> str:
     values = _require_object(raw, "regression_args.heterogeneity.selected_values")
     parts: list[str] = []
     for key, value in values.items():
@@ -206,9 +207,9 @@ def flatten_structured_regression_args(data: dict[str, Any]) -> dict[str, str]:
     _check_exact_keys(execution, ("coef_direction",), "regression_args.execution")
 
     cv_min_count = _parse_nonnegative_int(controls["min_count"], "regression_args.controls.min_count")
-    rob_vars, y_ln, x_ln, rob_year_range = _robustness_to_flat(data["robustness"])
+    rob_vars, ln_y, ln_x, rob_year_range = _robustness_to_flat(data["robustness"])
     out = {
-        "input_dta": str(data["input_dta"]).strip(),
+        "data_path": str(data["data_path"]).strip(),
         "y": _join_space(_string_list(data["outcomes"], "regression_args.outcomes", required=True)),
         "x": _join_space(_string_list(data["explanatory_vars"], "regression_args.explanatory_vars", required=True)),
         "cv": _join_space(_string_list(controls["search_pool"], "regression_args.controls.search_pool", required=True)),
@@ -218,11 +219,11 @@ def flatten_structured_regression_args(data: dict[str, Any]) -> dict[str, str]:
         "timevar": str(panel["time"]).strip(),
         "meds": _join_pipe(_string_list(mechanism["variables"], "regression_args.mechanism.variables")),
         "mods": _join_pipe(_string_list(moderation["variables"], "regression_args.moderation.variables")),
-        "heterogeneity_discrete": _join_pipe(_string_list(heterogeneity["discrete_groups"], "regression_args.heterogeneity.discrete_groups")),
-        "heterogeneity_discrete_values": _heterogeneity_values_to_flat(heterogeneity["selected_values"]),
+        "het_disc": _join_pipe(_string_list(heterogeneity["discrete_groups"], "regression_args.heterogeneity.discrete_groups")),
+        "het_disc_vals": _het_disc_vals_to_flat(heterogeneity["selected_values"]),
         "rob_vars": rob_vars,
-        "y_ln": y_ln,
-        "x_ln": x_ln,
+        "ln_y": ln_y,
+        "ln_x": ln_x,
         "rob_year_range": rob_year_range,
         "iv": _join_space(_string_list(iv["instruments"], "regression_args.iv.instruments")),
         "coef_direction": str(execution["coef_direction"]).strip(),
@@ -244,13 +245,13 @@ def validate_internal_flat_regression_args(data: dict[str, str]) -> dict[str, st
         raise ValueError(f"Invalid regression_args.coef_direction: expected 'positive' or 'negative', got {out['coef_direction']!r}")
     out["coef_direction"] = coef_direction
 
-    for name in ("y_ln", "x_ln"):
+    for name in ("ln_y", "ln_x"):
         value = out[name].strip().lower()
         if value not in BOOL_TEXT_VALUES:
             raise ValueError(f"Invalid regression_args.{name}: unsupported boolean value {out[name]!r}")
 
     validate_rob_vars(out["rob_vars"])
-    validate_heterogeneity_discrete_values(out["heterogeneity_discrete_values"])
+    validate_het_disc_vals(out["het_disc_vals"])
     return out
 
 

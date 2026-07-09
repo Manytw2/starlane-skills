@@ -38,7 +38,7 @@ Discrete heterogeneity runs group-specific regressions for selected group values
 
 | Block | Formula | Column | Records | Order |
 | --- | --- | --- | --- | --- |
-| Group-specific regression | `y ~ x + cv_selected` within `group_var == group_value` | `heterogeneity_group__{group_var}__{group_value}__{y}__{x}` | `x` | `group_var -> group_value -> y -> x` |
+| Group-specific regression | `y ~ x + cv_selected` within `group_var == group_value` | `het_disc__{group_var}__{group_value}__{y}__{x}` | `x` | `group_var -> group_value -> y -> x` |
 
 Count:
 
@@ -50,14 +50,14 @@ sum(n_group_values(group_var)) * n_y * n_x
 
 | Analysis plan field | Regression arg |
 | --- | --- |
-| `heterogeneity.discrete_groups` | `heterogeneity_discrete` |
-| `heterogeneity.selected_values` | `heterogeneity_discrete_values` |
+| `heterogeneity.discrete_groups` | `het_disc` |
+| `heterogeneity.selected_values` | `het_disc_vals` |
 
 Encoded selected values use:
 
 ```text
-heterogeneity_discrete = SOE|Region
-heterogeneity_discrete_values = SOE:1;0|Region:East;West
+het_disc = SOE|Region
+het_disc_vals = SOE:1;0|Region:East;West
 ```
 
 ## Boundaries

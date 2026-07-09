@@ -146,12 +146,12 @@ output/starlane-regression/
   python/
     combination_summary.csv
     final_result.docx
-    regression_generated.py
+    generated_regression.py
     ...
   stata/
     combination_summary.csv
-    regression_generated.do
-    starlane-regression-results.docx
+    generated_regression.do
+    final_result.docx
 
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/
@@ -166,7 +166,7 @@ output/starlane-regression/
 
 Python 和 Stata env 只负责执行 summary/final 逻辑。外层编排入口 `scripts/workflow/run_stage.py` 负责创建 run 目录、写 manifest、设置 `STARLANE_EXPORT` 和 `STARLANE_TMP`、校验 summary 表头与 ModelPlan 一致、在成功后发布 public output 并清理 `tmp/`。分块 summary 跑（`--cv-idx-start/--cv-idx-end`）属于中间产物，不发布。
 
-summary 阶段由 `scripts/workflow/summary_parallel.py` 统一编排：按机器核数、可用内存和任务数自动决定并发度，把 cv 子集区间按 guided self-scheduling（块大小递减）切块，Python env 起多个 `summary.py --cv-idx-start/end` 子进程、Stata env 起多个 `stata -b` 批处理实例，最后合并 part 表、校验 `selection_id` 唯一性并按 `score` 降序写出 `combination_summary.csv`。串行只是并发度为 1 的退化情形，没有独立代码路径。两条并发纪律：每个 Stata worker 使用独立 `STATATMP` 子目录（并发实例共享 tempfile 目录会互相覆盖 preserve/tempfile）；每个 Python worker 限制 BLAS/numba 线程为 1，避免进程级并行之上再叠线程超订。xlsx/xls 输入会先做一次预热缓存（Stata 转 `.dta`，Python 转 `.pkl`），避免每个 worker 重复解析慢格式。
+summary 阶段由 `scripts/workflow/summary_parallel.py` 统一编排：按机器核数、可用内存和任务数自动决定并发度，把 cv 子集区间按 guided self-scheduling（块大小递减）切块，Python env 起多个 `build_summary.py --cv-idx-start/end` 子进程、Stata env 起多个 `stata -b` 批处理实例，最后合并 part 表、校验 `selection_id` 唯一性并按 `score` 降序写出 `combination_summary.csv`。串行只是并发度为 1 的退化情形，没有独立代码路径。两条并发纪律：每个 Stata worker 使用独立 `STATATMP` 子目录（并发实例共享 tempfile 目录会互相覆盖 preserve/tempfile）；每个 Python worker 限制 BLAS/numba 线程为 1，避免进程级并行之上再叠线程超订。xlsx/xls 输入会先做一次预热缓存（Stata 转 `.dta`，Python 转 `.pkl`），避免每个 worker 重复解析慢格式。
 
 成功运行后不保留 `.score_*.dta` 这类低价值中间文件。失败运行会保留 logs 和 tmp，方便诊断。
 
@@ -195,10 +195,10 @@ skills/starlane-regression/
       summary_parallel.py
       contracts.py
       model_plan.py
-      stata_emit.py
+      stata_config.py
       verify_model_plan_drift.py
       profile_data.py
-      compile_plan_to_regression_args.py
+      compile_plan.py
       runtime.py
     envs/
       python/
@@ -218,7 +218,7 @@ skills/starlane-regression/
 - `scripts/workflow/summary_parallel.py`：summary 阶段的分块并行编排（并发度探测、guided 切块、worker 进程池、part 合并与排序）。
 - `scripts/workflow/contracts.py`：regression args 和候选选择的 JSON 契约校验。
 - `scripts/workflow/model_plan.py`：模型枚举的单一事实来源，回答"该跑什么"。
-- `scripts/workflow/stata_emit.py`：把 ModelPlan 渲染成 Stata 配置。
+- `scripts/workflow/stata_config.py`：把 ModelPlan 渲染成 Stata 配置。
 - `scripts/workflow/verify_model_plan_drift.py`：校验 summary 产物与 ModelPlan 是否漂移。
 - `scripts/workflow/` 其余：数据画像、plan 编译和 runtime 生命周期管理。
 - `scripts/envs/`：Python / Stata 的 summary、final 和源码生成逻辑，回答"这个 env 怎么跑"。

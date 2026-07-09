@@ -1,7 +1,8 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License.
+"""Final stage (stata env): regression args + selection -> 可复现源码.
 
-"""Generate a readable Stata .do file from JSON Starlane regression parameters."""
+IN:  regression_args.json + selected_candidate.json（cv_idx / vce_idx）
+OUT: 生成的 Stata .do 源码（运行后产出最终表格到 --result-dir）
+"""
 
 from __future__ import annotations
 
@@ -39,9 +40,9 @@ BLOCK_IV_STAGE2 = "ivreghdfe {y} `cv_selected' ({x} = {iv}) if __base_sample, `r
 BLOCK_MED_TOTAL = "reghdfe {y} {x} `cv_selected' if __base_sample, `reg_opts'\nest store m{m_idx}"
 BLOCK_MED_PATH_A = "reghdfe {med} {x} `cv_selected' if __base_sample, `reg_opts'\nest store m{m_idx}"
 
-BLOCK_MOD_STD_X = "egen std_x_{x} = std({x})"
-BLOCK_MOD_STD_MOD = "egen std_mod_{mod} = std({mod})"
-BLOCK_MOD_REGRESS = "reghdfe {y} c.std_x_{x}##c.std_mod_{mod} `cv_selected' if __base_sample, `reg_opts'\nest store m{m_idx}"
+BLOCK_MOD_STD_X = "capture drop std_{x}\negen std_{x} = std({x})"
+BLOCK_MOD_STD_MOD = "capture drop std_{mod}\negen std_{mod} = std({mod})"
+BLOCK_MOD_REGRESS = "reghdfe {y} c.std_{x}##c.std_{mod} `cv_selected' if __base_sample, `reg_opts'\nest store m{m_idx}"
 BLOCK_HET_DISCRETE = "reghdfe {y} {x} `cv_selected' if __base_sample & {cond}, `reg_opts'\nest store m{m_idx}"
 BLOCK_FORCE_NUMERIC_HELPER = """* Force analysis vars to numeric in-place before shared-sample filtering.
 capture program drop _force_numeric_var
@@ -102,7 +103,7 @@ def parse_rob_vars(rob_raw: str) -> dict[str, str]:
     return out
 
 
-def parse_heterogeneity_discrete_values(raw: str) -> dict[str, list[str]]:
+def parse_het_disc_vals(raw: str) -> dict[str, list[str]]:
     """Parse flat encoded heterogeneity values from the internal env mapping."""
     if not raw or not raw.strip():
         return {}
@@ -155,10 +156,10 @@ def stata_escape(text: str) -> str:
     return text.replace('"', '""')
 
 
-def build_load_data_line(input_dta: str) -> str:
+def build_load_data_line(data_path: str) -> str:
     """Build a readable data loading line based on file suffix."""
-    escaped_path = stata_escape(input_dta)
-    suffix = Path(input_dta).suffix.lower()
+    escaped_path = stata_escape(data_path)
+    suffix = Path(data_path).suffix.lower()
     if suffix == ".dta":
         return f'use "{escaped_path}", clear'
     if suffix == ".csv":
@@ -219,9 +220,7 @@ def build_analysis_var_pool(
     return unique_preserve(items)
 
 
-def parse_args(argv: list[str]) -> tuple[list[str], Path]:
-    if len(argv) > 1 and not argv[1].startswith("-"):
-        raise ValueError("Positional regression args are no longer supported. Use --args-json PATH.")
+def parse_args(argv: list[str]) -> tuple[dict[str, str], int, int, str, Path]:
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate a readable Stata .do file from JSON Starlane regression parameters.")
@@ -232,8 +231,8 @@ def parse_args(argv: list[str]) -> tuple[list[str], Path]:
     ns = parser.parse_args(argv[1:])
     mapping = load_regression_args_json(Path(ns.args_json))
     selection = load_selection_json(Path(ns.selection_json))
-    base = [mapping[name] for name in REGRESSION_ARG_NAMES]
-    return [*base, str(selection["cv_idx"]), str(selection["vce_idx"]), str(ns.result_dir)], Path(ns.output)
+    values = {name: str(mapping[name]) for name in REGRESSION_ARG_NAMES}
+    return values, int(selection["cv_idx"]), int(selection["vce_idx"]), str(ns.result_dir), Path(ns.output)
 
 
 def _add_reg2docx(lines: list[str], m_start: int, m_end: int, title: str, table_num: int, replace: bool = False) -> None:
@@ -245,33 +244,23 @@ def _add_reg2docx(lines: list[str], m_start: int, m_end: int, title: str, table_
 
 
 def build_do_content(
-    input_dta: str,
+    data_path: str,
     y: list[str],
     x: list[str],
-    cv_all: str,
     cv_subset: str,
-    cv_fixed: str,
-    cv_min_count: str,
     panelvar: str,
     timevar: str,
     vce_option: str,
-    meds_raw: str,
-    mods_raw: str,
-    heterogeneity_discrete_raw: str,
-    heterogeneity_discrete_values_raw: str,
-    rob_vars_raw: str,
+    het_disc_vals_raw: str,
     meds: list[str],
     mods: list[str],
-    heterogeneity_discrete: list[str],
+    het_disc: list[str],
     rob: dict[str, str],
-    y_ln: bool,
-    x_ln: bool,
-    y_ln_raw: str,
-    x_ln_raw: str,
+    ln_y: bool,
+    ln_x: bool,
     rob_year_range: str,
     iv_raw: str,
     iv: list[str],
-    coef_direction: str,
     export_doc: bool = False,
     result_dir: str = ".",
     expected_model_count: int | None = None,
@@ -282,35 +271,33 @@ def build_do_content(
 
     reg_opts = build_reg_opts(panelvar, timevar, vce_option)
     cv_selected = cv if cv else ""
-    y_all = " ".join(y)
-    x_all = " ".join(x)
-    docxout = str((Path(result_dir) / "starlane-regression-results.docx").as_posix())
-    heterogeneity_discrete_values = parse_heterogeneity_discrete_values(
-        heterogeneity_discrete_values_raw
+    docxout = str((Path(result_dir) / "final_result.docx").as_posix())
+    het_disc_vals = parse_het_disc_vals(
+        het_disc_vals_raw
     )
-    x_ln_sources: list[str] = []
-    if x_ln:
-        x_ln_sources.extend(x)
+    ln_x_sources: list[str] = []
+    if ln_x:
+        ln_x_sources.extend(x)
     if rob.get("ln_x"):
-        x_ln_sources.extend(rob["ln_x"].split())
-    x_ln_specs: list[tuple[str, str]] = []
-    for idx, source in enumerate(unique_preserve(x_ln_sources), start=1):
-        helper = source if source.startswith("ln") else f"lnx_{idx}"
-        x_ln_specs.append((source, helper))
+        ln_x_sources.extend(rob["ln_x"].split())
+    ln_x_specs: list[tuple[str, str]] = []
+    for source in unique_preserve(ln_x_sources):
+        helper = source if source.startswith("ln") else f"ln_{source}"
+        ln_x_specs.append((source, helper))
 
-    y_ln_sources: list[str] = []
-    if y_ln:
-        y_ln_sources.extend(y)
+    ln_y_sources: list[str] = []
+    if ln_y:
+        ln_y_sources.extend(y)
     if rob.get("ln_y"):
-        y_ln_sources.extend(rob["ln_y"].split())
-    y_ln_specs: list[tuple[str, str]] = []
-    for idx, source in enumerate(unique_preserve(y_ln_sources), start=1):
-        helper = source if source.startswith("ln") else f"lny_{idx}"
-        y_ln_specs.append((source, helper))
+        ln_y_sources.extend(rob["ln_y"].split())
+    ln_y_specs: list[tuple[str, str]] = []
+    for source in unique_preserve(ln_y_sources):
+        helper = source if source.startswith("ln") else f"ln_{source}"
+        ln_y_specs.append((source, helper))
     active_heterogeneity_vars = [
         group_var
-        for group_var in heterogeneity_discrete
-        if heterogeneity_discrete_values.get(group_var)
+        for group_var in het_disc
+        if het_disc_vals.get(group_var)
     ]
     sample_pool_items = build_analysis_var_pool(
         y=y,
@@ -348,7 +335,7 @@ def build_do_content(
         lines.append(f'local docxout "{stata_escape(docxout)}"')
         lines.extend(BLOCK_DOC_OPTS.split("\n"))
     lines.append("")
-    lines.append(build_load_data_line(input_dta))
+    lines.append(build_load_data_line(data_path))
     lines.append(f'local __panelvar "{panelvar}"')
     lines.append(f"capture confirm string variable {panelvar}")
     lines.append(f'if _rc == 0 egen long __panel_gid = group({panelvar}), label')
@@ -419,10 +406,10 @@ def build_do_content(
             table_num += 1
         lines.append("")
 
-    # Robustness: ln_x (auto when x_ln=yes; else only rob["ln_x"] if present)
-    if x_ln_specs:
+    # Robustness: ln_x (auto when ln_x=yes; else only rob["ln_x"] if present)
+    if ln_x_specs:
         lines.append("** 稳健性检验：X取对数")
-        for source, helper in x_ln_specs:
+        for source, helper in ln_x_specs:
             if helper == source:
                 continue
             lines.append(f"capture drop {helper}")
@@ -431,7 +418,7 @@ def build_do_content(
             )
         block_start = m_idx
         for yi in y:
-            for _, helper in x_ln_specs:
+            for _, helper in ln_x_specs:
                 block = BLOCK_ROB_LN_X.format(y=yi, ln_x=helper, m_idx=m_idx)
                 lines.extend(block.split("\n"))
                 m_idx += 1
@@ -440,10 +427,10 @@ def build_do_content(
             table_num += 1
         lines.append("")
 
-    # Robustness: ln_y (auto when y_ln=yes; else only rob["ln_y"] if present)
-    if y_ln_specs:
+    # Robustness: ln_y (auto when ln_y=yes; else only rob["ln_y"] if present)
+    if ln_y_specs:
         lines.append("** 稳健性检验：Y取对数")
-        for source, helper in y_ln_specs:
+        for source, helper in ln_y_specs:
             if helper == source:
                 continue
             lines.append(f"capture drop {helper}")
@@ -451,7 +438,7 @@ def build_do_content(
                 f"gen double {helper} = ln({source}) if {source} > 0 & !missing({source})"
             )
         block_start = m_idx
-        for _, helper in y_ln_specs:
+        for _, helper in ln_y_specs:
             for xi in x:
                 block = BLOCK_ROB_LN_Y.format(ln_y=helper, x=xi, m_idx=m_idx)
                 lines.extend(block.split("\n"))
@@ -555,11 +542,10 @@ def build_do_content(
     # Moderation
     if mods:
         lines.append("** 异质性分析：调节效应检验")
-        lines.append("cap drop std_x_* std_mod_*")
         for xi in x:
-            lines.append(BLOCK_MOD_STD_X.format(x=xi))
+            lines.extend(BLOCK_MOD_STD_X.format(x=xi).split("\n"))
         for mod_var in mods:
-            lines.append(BLOCK_MOD_STD_MOD.format(mod=mod_var))
+            lines.extend(BLOCK_MOD_STD_MOD.format(mod=mod_var).split("\n"))
         block_start = m_idx
         for mod_var in mods:
             for yi in y:
@@ -574,10 +560,10 @@ def build_do_content(
             table_num += 1
         lines.append("")
 
-    # Heterogeneity: discrete groups driven by heterogeneity_discrete_values
+    # Heterogeneity: discrete groups driven by het_disc_vals
     # Same (y,x) regressions grouped together, each with all group values adjacent
-    for group_var in heterogeneity_discrete:
-        selected_values = heterogeneity_discrete_values.get(group_var, [])
+    for group_var in het_disc:
+        selected_values = het_disc_vals.get(group_var, [])
         if not selected_values:
             continue
         lines.append(f"** 异质性分析：离散分组-{group_var}")
@@ -624,55 +610,28 @@ def build_do_content(
 
 def main() -> int:
     try:
-        raw_args, out = parse_args(sys.argv)
+        values, cv_idx, vce_idx, result_dir, out = parse_args(sys.argv)
 
-        (
-            input_dta,
-            y_str,
-            x_str,
-            cv_str,
-            cv_fixed_str,
-            cv_min_count_str,
-            panelvar,
-            timevar,
-            meds_str,
-            mods_str,
-            heterogeneity_discrete_str,
-            heterogeneity_discrete_values_str,
-            rob_vars_str,
-            y_ln_str,
-            x_ln_str,
-            rob_year_range,
-            iv_str,
-            coef_direction,
-            cv_idx_str,
-            vce_idx_str,
-            result_dir,
-        ) = raw_args
-
-        cv_idx = int(cv_idx_str)
-        vce_idx = int(vce_idx_str)
         if vce_idx < 0 or vce_idx > 3:
             raise ValueError("vce_idx must be 0-3 (0=ols, 1=robust, 2=cluster panel, 3=cluster panel+time)")
 
-        values = {name: raw_args[idx] for idx, name in enumerate(REGRESSION_ARG_NAMES)}
         args_proxy = RegressionArgsProxy(values)
         plan = build_model_plan(args_proxy)
         cv_subset = " ".join(plan.cv_subset(cv_idx).controls)
         vce_option = plan.vce_choice(vce_idx).stata_option
         expected_model_count = len(plan.specs_for_cv_idx(args_proxy, cv_idx))
 
-        y_list = [v for v in y_str.split() if v]
-        x_list = [v for v in x_str.split() if v]
-        meds = [v for v in meds_str.replace("|", " ").split() if v]
-        mods = [v for v in mods_str.replace("|", " ").split() if v]
-        heterogeneity_discrete = [v for v in heterogeneity_discrete_str.replace("|", " ").split() if v]
-        iv = [v for v in iv_str.split() if v]
+        y_list = [v for v in values["y"].split() if v]
+        x_list = [v for v in values["x"].split() if v]
+        meds = [v for v in values["meds"].replace("|", " ").split() if v]
+        mods = [v for v in values["mods"].replace("|", " ").split() if v]
+        het_disc = [v for v in values["het_disc"].replace("|", " ").split() if v]
+        iv = [v for v in values["iv"].split() if v]
 
-        y_ln = y_ln_str.strip().lower() in ("", "1", "是", "yes", "true")
-        x_ln = x_ln_str.strip().lower() in ("", "1", "是", "yes", "true")
+        ln_y = values["ln_y"].strip().lower() in ("", "1", "是", "yes", "true")
+        ln_x = values["ln_x"].strip().lower() in ("", "1", "是", "yes", "true")
 
-        rob = parse_rob_vars(rob_vars_str)
+        rob = parse_rob_vars(values["rob_vars"])
 
         raw_result_dir = result_dir.strip() if result_dir.strip() else "."
         result_dir_path = Path(raw_result_dir)
@@ -681,33 +640,23 @@ def main() -> int:
         result_dir_val = str(result_dir_path)
 
         content = build_do_content(
-            input_dta=input_dta,
+            data_path=values["data_path"],
             y=y_list,
             x=x_list,
-            cv_all=cv_str,
             cv_subset=cv_subset,
-            cv_fixed=cv_fixed_str,
-            cv_min_count=cv_min_count_str,
-            panelvar=panelvar,
-            timevar=timevar,
+            panelvar=values["panelvar"],
+            timevar=values["timevar"],
             vce_option=vce_option,
-            meds_raw=meds_str,
-            mods_raw=mods_str,
-            heterogeneity_discrete_raw=heterogeneity_discrete_str,
-            heterogeneity_discrete_values_raw=heterogeneity_discrete_values_str,
-            rob_vars_raw=rob_vars_str,
+            het_disc_vals_raw=values["het_disc_vals"],
             meds=meds,
             mods=mods,
-            heterogeneity_discrete=heterogeneity_discrete,
+            het_disc=het_disc,
             rob=rob,
-            y_ln=y_ln,
-            x_ln=x_ln,
-            y_ln_raw=y_ln_str,
-            x_ln_raw=x_ln_str,
-            rob_year_range=rob_year_range.strip(),
-            iv_raw=iv_str,
+            ln_y=ln_y,
+            ln_x=ln_x,
+            rob_year_range=values["rob_year_range"].strip(),
+            iv_raw=values["iv"],
             iv=iv,
-            coef_direction=coef_direction,
             export_doc=True,
             result_dir=result_dir_val,
             expected_model_count=expected_model_count,

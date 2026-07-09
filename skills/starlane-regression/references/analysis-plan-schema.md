@@ -45,8 +45,8 @@ It is not a flat copy of the 18 regression arguments.
     "alternative_outcomes": [],
     "alternative_explanatory_vars": [],
     "lag_periods": [],
-    "log_y": false,
-    "log_x": false,
+    "ln_y": false,
+    "ln_x": false,
     "sample_window": null
   },
   "mechanism": {

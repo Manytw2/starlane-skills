@@ -1,4 +1,8 @@
-"""Generate a runnable Python final-stage source file."""
+"""Final stage (python env): regression args + selection -> 可复现源码.
+
+IN:  regression_args.json + selected_candidate.json（cv_idx / vce_idx）
+OUT: 生成的 Python 源码（运行后产出 final_result.* 到 STARLANE_EXPORT）
+"""
 
 from __future__ import annotations
 
@@ -6,11 +10,10 @@ import json
 import sys
 from pathlib import Path
 
-from common import load_regression_args_json, load_selection_json, reject_positional_args
+from common import load_regression_args_json, load_selection_json
 
 
 def parse_args(argv: list[str]) -> tuple[dict[str, str], int, int, Path, Path]:
-    reject_positional_args(argv)
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate a runnable Starlane Python final-stage source file.")
@@ -38,7 +41,7 @@ SCRIPTS_DIR = Path({scripts_dir_text!r})
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from final import run_final
+from final_regression import run_final
 
 
 ARGS = {payload}

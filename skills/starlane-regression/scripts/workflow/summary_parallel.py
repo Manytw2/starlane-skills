@@ -24,7 +24,7 @@ from pathlib import Path
 
 from model_plan import RegressionArgsProxy, build_model_plan
 from runtime import RunContext, append_command, update_manifest
-from stata_emit import render_stata_summary_config, render_stata_summary_runner
+from stata_config import render_stata_summary_config, render_stata_summary_runner
 from verify_model_plan_drift import check_summary_header
 
 
@@ -186,7 +186,7 @@ def prepare_input_cache(
     Returns the cache path to use as worker input, or None to keep the
     original input. dta/csv inputs are cheap to load and skip warmup.
     """
-    input_path = args_values["input_dta"]
+    input_path = args_values["data_path"]
     suffix = Path(input_path).suffix.lower()
     if suffix not in (".xls", ".xlsx"):
         return None
@@ -241,7 +241,7 @@ def start_python_chunk(
     }
     cmd = [
         sys.executable,
-        str(PYTHON_ENV_SCRIPTS / "summary.py"),
+        str(PYTHON_ENV_SCRIPTS / "build_summary.py"),
         "--args-json",
         str(worker_args_json),
         "--cv-idx-start",
@@ -445,7 +445,7 @@ def run_summary(
         jobs, jobs_detail = 1, "explicit cv range runs as one externally scheduled chunk"
     else:
         lo, hi = 0, n_valid - 1
-        jobs, jobs_detail = compute_auto_jobs(env, args_values["input_dta"], n_valid)
+        jobs, jobs_detail = compute_auto_jobs(env, args_values["data_path"], n_valid)
     print(f"STARLANE_JOBS: auto -> {jobs} ({jobs_detail})")
 
     chunks = build_chunks(lo, hi, jobs, MIN_CHUNK_SUBSETS[env])
@@ -474,10 +474,10 @@ def run_summary(
     if len(chunks) > 1:
         cache_path = prepare_input_cache(env, args_values, context, stata_bin, jsonl)
         if cache_path is not None:
-            worker_args_values = {**args_values, "input_dta": cache_path}
+            worker_args_values = {**args_values, "data_path": cache_path}
             if env == "python":
                 structured = json.loads(args_path.read_text(encoding="utf-8"))
-                structured["input_dta"] = cache_path
+                structured["data_path"] = cache_path
                 worker_args_json = context.generated_dir / "regression_args_worker.json"
                 worker_args_json.write_text(
                     json.dumps(structured, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

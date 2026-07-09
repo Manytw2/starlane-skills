@@ -2,7 +2,7 @@
 
 This launcher is intentionally a thin shell: it only prepares demo inputs and
 calls the same `run_stage.py` entry the skill workflow uses, so the demo
-exercises the real summary/final pipeline instead of a parallel one.
+exercises the real summary/final pipeline instead of maintaining a duplicate.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ PUBLIC_OUTPUT = ROOT / "output" / "starlane-regression"
 UV_PYTHON = ["uv", "run", "--project", str(SKILL_ROOT), "python"]
 
 SUMMARY_ARGS = {
-    "input_dta": str(DEMO_DTA),
+    "data_path": str(DEMO_DTA),
     "outcomes": ["lnApplyG", "lnGrantG"],
     "explanatory_vars": ["Attention"],
     "controls": {
@@ -40,8 +40,8 @@ SUMMARY_ARGS = {
         "alternative_outcomes": ["lnAGreenInv", "lnGGreenInv"],
         "alternative_explanatory_vars": [],
         "lag_periods": [1],
-        "log_y": False,
-        "log_x": False,
+        "ln_y": False,
+        "ln_x": False,
         "sample_window": None,
     },
     "mechanism": {
@@ -108,6 +108,10 @@ def run_env(env_name: str, workdir: Path) -> None:
     print(f"\nRunning {env_name} env summary...", flush=True)
     run_stage(["summary", "--env", env_name, "--args-json", str(args_json)])
 
+    # Demo-only shortcut: the summary table is sorted by score descending, so
+    # the first row is the top-scored candidate. Real workflows must confirm
+    # the candidate with the user instead of auto-picking the highest score;
+    # see SKILL.md "Model Selection, Ethics, And Boundaries".
     summary_csv = PUBLIC_OUTPUT / env_name / "combination_summary.csv"
     first = first_summary_row(summary_csv)
     selection_json = write_json(

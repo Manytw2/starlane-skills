@@ -10,7 +10,7 @@ Regression args are implementation details. Use research-language labels when sp
 
 | Structured field | User-facing wording |
 | --- | --- |
-| `input_dta` | 数据文件 |
+| `data_path` | 数据文件 |
 | `outcomes` | 被解释变量, 结果变量 |
 | `explanatory_vars` | 核心解释变量, 解释变量 |
 | `controls.search_pool` | 控制变量池 |
@@ -25,8 +25,8 @@ Regression args are implementation details. Use research-language labels when sp
 | `robustness.alternative_outcomes` | 替换被解释变量的稳健性检验 |
 | `robustness.alternative_explanatory_vars` | 替换核心解释变量的稳健性检验 |
 | `robustness.lag_periods` | 核心解释变量滞后期数 |
-| `robustness.log_y` | 是否对被解释变量取对数做稳健性 |
-| `robustness.log_x` | 是否对核心解释变量取对数做稳健性 |
+| `robustness.ln_y` | 是否对被解释变量取对数做稳健性 |
+| `robustness.ln_x` | 是否对核心解释变量取对数做稳健性 |
 | `robustness.sample_window` | 稳健性检验的样本年份窗口 |
 | `iv.instruments` | 工具变量候选 |
 | `execution.coef_direction` | 预期影响方向 |

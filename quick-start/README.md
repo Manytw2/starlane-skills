@@ -13,6 +13,11 @@ Python and Stata are execution envs for the same workflow. They are not
 separate workflows, and this demo does not treat one env as a correctness check
 for the other.
 
+The demo auto-picks the top-scored row of `combination_summary.csv` as the
+final-stage candidate. That shortcut exists only so the demo can run
+unattended; in the real workflow the candidate row is confirmed with the user,
+not chosen by score alone.
+
 ## Setup
 
 From the repository root:
@@ -64,7 +69,7 @@ published to the same per-env directories:
 
 ```text
 output/starlane-regression/python/combination_summary.csv
-output/starlane-regression/python/regression_generated.py
+output/starlane-regression/python/generated_regression.py
 output/starlane-regression/python/final_result.csv
 output/starlane-regression/python/final_result.md
 output/starlane-regression/python/final_result.docx
@@ -74,8 +79,8 @@ Typical Stata env outputs:
 
 ```text
 output/starlane-regression/stata/combination_summary.csv
-output/starlane-regression/stata/regression_generated.do
-output/starlane-regression/stata/starlane-regression-results.docx
+output/starlane-regression/stata/generated_regression.do
+output/starlane-regression/stata/final_result.docx
 ```
 
 Internal run evidence (inputs, generated sources, logs, manifests) is kept

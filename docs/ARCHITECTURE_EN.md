@@ -146,12 +146,12 @@ output/starlane-regression/
   python/
     combination_summary.csv
     final_result.docx
-    regression_generated.py
+    generated_regression.py
     ...
   stata/
     combination_summary.csv
-    regression_generated.do
-    starlane-regression-results.docx
+    generated_regression.do
+    final_result.docx
 
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/
@@ -166,7 +166,7 @@ output/starlane-regression/
 
 Python and Stata envs only execute summary/final logic. The orchestration entrypoint `scripts/workflow/run_stage.py` creates run directories, writes manifests, sets `STARLANE_EXPORT` and `STARLANE_TMP`, verifies the summary header against the canonical ModelPlan, publishes public outputs on success, and cleans `tmp/` after successful runs. Chunked summary runs (`--cv-idx-start/--cv-idx-end`) are intermediate artifacts and are not published.
 
-The summary stage is orchestrated by `scripts/workflow/summary_parallel.py`: it picks a concurrency level from machine cores, available memory, and task count, splits the cv-subset range into guided self-scheduling chunks (decreasing sizes), runs multiple `summary.py --cv-idx-start/end` subprocesses for the Python env or multiple `stata -b` batch instances for the Stata env, then merges the part tables, checks `selection_id` uniqueness, and writes `combination_summary.csv` sorted by `score` descending. Serial execution is just the concurrency-1 degenerate case; there is no separate code path. Two concurrency rules apply: each Stata worker gets its own `STATATMP` subdirectory (concurrent instances sharing a temp dir overwrite each other's preserve/tempfile state), and each Python worker caps BLAS/numba threads at 1 to avoid thread oversubscription on top of process-level parallelism. xlsx/xls inputs are warmed into a cache once (`.dta` for Stata, `.pkl` for Python) so workers do not re-parse slow formats.
+The summary stage is orchestrated by `scripts/workflow/summary_parallel.py`: it picks a concurrency level from machine cores, available memory, and task count, splits the cv-subset range into guided self-scheduling chunks (decreasing sizes), runs multiple `build_summary.py --cv-idx-start/end` subprocesses for the Python env or multiple `stata -b` batch instances for the Stata env, then merges the part tables, checks `selection_id` uniqueness, and writes `combination_summary.csv` sorted by `score` descending. Serial execution is just the concurrency-1 degenerate case; there is no separate code path. Two concurrency rules apply: each Stata worker gets its own `STATATMP` subdirectory (concurrent instances sharing a temp dir overwrite each other's preserve/tempfile state), and each Python worker caps BLAS/numba threads at 1 to avoid thread oversubscription on top of process-level parallelism. xlsx/xls inputs are warmed into a cache once (`.dta` for Stata, `.pkl` for Python) so workers do not re-parse slow formats.
 
 Successful runs do not retain low-value intermediates such as `.score_*.dta`. Failed runs keep logs and tmp files for diagnosis.
 
@@ -195,10 +195,10 @@ skills/starlane-regression/
       summary_parallel.py
       contracts.py
       model_plan.py
-      stata_emit.py
+      stata_config.py
       verify_model_plan_drift.py
       profile_data.py
-      compile_plan_to_regression_args.py
+      compile_plan.py
       runtime.py
     envs/
       python/
@@ -218,7 +218,7 @@ Responsibilities:
 - `scripts/workflow/summary_parallel.py`: chunked parallel orchestration for the summary stage (concurrency probing, guided chunking, worker process pool, part merge and sorting).
 - `scripts/workflow/contracts.py`: JSON contract validation for regression args and candidate selection.
 - `scripts/workflow/model_plan.py`: the single source of truth for model enumeration; answers "what should run".
-- `scripts/workflow/stata_emit.py`: renders the ModelPlan into Stata configuration.
+- `scripts/workflow/stata_config.py`: renders the ModelPlan into Stata configuration.
 - `scripts/workflow/verify_model_plan_drift.py`: verifies summary artifacts against the canonical ModelPlan.
 - Remaining `scripts/workflow/` files: data profiling, plan compilation, and runtime lifecycle management.
 - `scripts/envs/`: Python / Stata summary, final, and source-generation logic; answers "how this env runs it".

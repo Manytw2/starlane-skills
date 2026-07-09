@@ -12,7 +12,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from compile_plan_to_regression_args import compile_plan_to_structured_args, load_plan
+from compile_plan import compile_plan_to_structured_args, load_plan
 from contracts import load_regression_args_json, load_selection_json
 from profile_data import build_profile
 from runtime import append_command, clean_success_tmp, create_run_context, mark_failed, mark_success, publish_outputs, update_manifest
@@ -199,7 +199,7 @@ def command_final(ns: argparse.Namespace) -> int:
             },
         )
         if ns.env == "python":
-            generated_source = context.generated_dir / "regression_generated.py"
+            generated_source = context.generated_dir / "generated_regression.py"
             generate_cmd = [
                 sys.executable,
                 str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
@@ -226,7 +226,7 @@ def command_final(ns: argparse.Namespace) -> int:
             stata_bin = find_stata()
             if not stata_bin:
                 raise RuntimeError("No Stata binary found. Set STARLANE_STATA_BIN or install Stata.")
-            generated_source = context.generated_dir / "regression_generated.do"
+            generated_source = context.generated_dir / "generated_regression.do"
             generate_cmd = [
                 sys.executable,
                 str(STATA_ENV_SCRIPTS / "generate_final_source.py"),

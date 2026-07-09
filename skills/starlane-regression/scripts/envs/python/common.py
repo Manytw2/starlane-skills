@@ -33,24 +33,26 @@ from model_plan import (  # noqa: E402
 
 @dataclass(frozen=True)
 class RegressionArgs:
-    input_dta: str
-    y: str
-    x: str
-    cv: str
-    cv_fixed: str
-    cv_min_count: str
-    panelvar: str
-    timevar: str
-    meds: str
-    mods: str
-    heterogeneity_discrete: str
-    heterogeneity_discrete_values: str
-    rob_vars: str
-    y_ln: str
-    x_ln: str
-    rob_year_range: str
-    iv: str
-    coef_direction: str
+    """Flat regression args (see docs/CONVENTIONS.md §5 for the abbreviation lexicon)."""
+
+    data_path: str       # input data file path (.dta/.csv/.xlsx/.xls)
+    y: str               # outcome variables
+    x: str               # explanatory variables
+    cv: str              # control variables (search pool)
+    cv_fixed: str        # always-included control variables
+    cv_min_count: str    # minimum optional-control count
+    panelvar: str        # panel entity variable (Stata xtset term)
+    timevar: str         # time variable (Stata xtset term)
+    meds: str            # mediator variables
+    mods: str            # moderator variables
+    het_disc: str        # heterogeneity: discrete group variables
+    het_disc_vals: str   # heterogeneity: selected values per group variable
+    rob_vars: str        # robustness spec (alt_y/alt_x/ln_y/ln_x/lag)
+    ln_y: str            # robustness: auto ln(y) toggle
+    ln_x: str            # robustness: auto ln(x) toggle
+    rob_year_range: str  # robustness: sample time window "start:end"
+    iv: str              # instrumental variables
+    coef_direction: str  # expected coefficient direction (positive/negative)
 
     @classmethod
     def from_mapping(cls, values: dict[str, object]) -> "RegressionArgs":
@@ -87,11 +89,6 @@ class RegressionAttempt:
     detail: dict[str, object] | None = None
 
 
-def reject_positional_args(argv: list[str]) -> None:
-    if len(argv) > 1 and not argv[1].startswith("-"):
-        raise ValueError("Positional regression args are no longer supported. Use --args-json PATH.")
-
-
 def read_data(path: str) -> pd.DataFrame:
     p = Path(path)
     suffix = p.suffix.lower()
@@ -119,25 +116,25 @@ def prepare_regression_data(df: pd.DataFrame, args: RegressionArgs) -> pd.DataFr
     rob = parse_rob_vars(args.rob_vars)
     y_vars = split_words(args.y)
     x_vars = split_words(args.x)
-    if parse_bool_default_yes(args.x_ln):
+    if parse_bool_default_yes(args.ln_x):
         for x in x_vars:
-            name = f"{x}_rob_ln_{x}"
+            name = f"ln_{x}"
             if name not in out.columns:
                 values = pd.to_numeric(out[x], errors="coerce")
                 out[name] = np.where(values > 0, np.log(values), np.nan)
     for x in split_words(rob.get("ln_x", "")):
-        name = f"{x}_rob_ln_{x}"
+        name = f"ln_{x}"
         if name not in out.columns and x in out.columns:
             values = pd.to_numeric(out[x], errors="coerce")
             out[name] = np.where(values > 0, np.log(values), np.nan)
-    if parse_bool_default_yes(args.y_ln):
+    if parse_bool_default_yes(args.ln_y):
         for y in y_vars:
-            name = f"{y}_rob_ln_{y}"
+            name = f"ln_{y}"
             if name not in out.columns:
                 values = pd.to_numeric(out[y], errors="coerce")
                 out[name] = np.where(values > 0, np.log(values), np.nan)
     for y in split_words(rob.get("ln_y", "")):
-        name = f"{y}_rob_ln_{y}"
+        name = f"ln_{y}"
         if name not in out.columns and y in out.columns:
             values = pd.to_numeric(out[y], errors="coerce")
             out[name] = np.where(values > 0, np.log(values), np.nan)
@@ -153,14 +150,14 @@ def prepare_regression_data(df: pd.DataFrame, args: RegressionArgs) -> pd.DataFr
     for x in x_vars:
         values = pd.to_numeric(out[x], errors="coerce")
         std = values.std()
-        out[f"std_x_{x}"] = (values - values.mean()) / std if std and np.isfinite(std) else np.nan
+        out[f"std_{x}"] = (values - values.mean()) / std if std and np.isfinite(std) else np.nan
     for mod in split_words(args.mods):
         if mod in out.columns:
             values = pd.to_numeric(out[mod], errors="coerce")
             std = values.std()
-            out[f"std_mod_{mod}"] = (values - values.mean()) / std if std and np.isfinite(std) else np.nan
+            out[f"std_{mod}"] = (values - values.mean()) / std if std and np.isfinite(std) else np.nan
             for x in x_vars:
-                out[f"interaction_{x}_{mod}"] = out[f"std_x_{x}"] * out[f"std_mod_{mod}"]
+                out[f"inter_{x}_{mod}"] = out[f"std_{x}"] * out[f"std_{mod}"]
     return out
 
 
@@ -223,6 +220,14 @@ def _series_value(values: pd.Series, name: str) -> float:
     return math.nan
 
 
+def _adjusted_r2(model: object) -> float:
+    try:
+        value = float(getattr(model, "_adj_r2", math.nan))
+    except (TypeError, ValueError):
+        return math.nan
+    return value if math.isfinite(value) else math.nan
+
+
 def _extract_result(model: object, target_var: str, nobs: int) -> RegressionResult | None:
     coefs = model.coef()
     ses = model.se()
@@ -239,7 +244,7 @@ def _extract_result(model: object, target_var: str, nobs: int) -> RegressionResu
         coef=coef,
         se=se,
         nobs=nobs,
-        r2=math.nan,
+        r2=_adjusted_r2(model),
         coefficients=coefficients,
         standard_errors=standard_errors,
         p_values=p_value_map or {target_var: p_value},

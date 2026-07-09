@@ -95,5 +95,5 @@ OUT: <产物>     <说明>
 
 - 同一字段在 Python 与 Stata 使用同一名字，不维护两套拼写。
 - Stata 硬限制：变量名 ≤ 32、global macro 名 ≤ 31；`starlane_` 前缀占 9 字符。
-- 短名加前缀仍超限时，在 `stata_emit.py` 的 `STATA_ARG_GLOBAL_NAMES` 登记更短别名，并同步 §5。
+- 短名加前缀仍超限时，在 `stata_config.py` 的 `STATA_ARG_GLOBAL_NAMES` 登记更短别名，并同步 §5。
 - 派生变量名须紧凑，例如用 `ln_{x}` 而非 `{x}_rob_ln_{x}`，避免拼入用户变量名后超长。

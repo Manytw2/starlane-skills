@@ -69,13 +69,6 @@ def compute_cv_subsets(cv_all: list[str], cv_fixed: list[str], cv_min_count: int
     return out
 
 
-def compute_cv_subset(cv_all: list[str], cv_fixed: list[str], cv_min_count: int, cv_idx: int) -> list[str]:
-    subsets = compute_cv_subsets(cv_all, cv_fixed, cv_min_count)
-    if cv_idx < 0 or cv_idx >= len(subsets):
-        raise ValueError("cv_idx out of range for given cv/cv_fixed/cv_min_count")
-    return subsets[cv_idx]
-
-
 def vce_suffix(vce_idx: int, panelvar: str, timevar: str) -> str:
     if vce_idx == 0:
         return "ols"
@@ -201,32 +194,32 @@ def build_specs(args: object, cv_subset: list[str]) -> list[RegressionSpec]:
             specs.append(RegressionSpec(f"baseline__{y}__{x}__cv", "baseline_cv", y, x, tuple(cv_subset)))
     for alt_x in split_words(rob.get("alt_x", "")):
         for y in y_vars:
-            specs.append(RegressionSpec(f"robustness_altx__{y}__{alt_x}", "robustness_alt_x", y, alt_x, tuple(cv_subset)))
+            specs.append(RegressionSpec(f"rob_alt_x__{y}__{alt_x}", "rob_alt_x", y, alt_x, tuple(cv_subset)))
     for alt_y in split_words(rob.get("alt_y", "")):
         for x in x_vars:
-            specs.append(RegressionSpec(f"robustness_alty__{alt_y}__{x}", "robustness_alt_y", alt_y, x, tuple(cv_subset)))
+            specs.append(RegressionSpec(f"rob_alt_y__{alt_y}__{x}", "rob_alt_y", alt_y, x, tuple(cv_subset)))
     ln_x_targets = []
-    if parse_bool_default_yes(str(getattr(args, "x_ln"))):
-        ln_x_targets.extend((x, f"{x}_rob_ln_{x}") for x in x_vars)
-    ln_x_targets.extend((x, f"{x}_rob_ln_{x}") for x in split_words(rob.get("ln_x", "")))
+    if parse_bool_default_yes(str(getattr(args, "ln_x"))):
+        ln_x_targets.extend((x, f"ln_{x}") for x in x_vars)
+    ln_x_targets.extend((x, f"ln_{x}") for x in split_words(rob.get("ln_x", "")))
     for original, target in ln_x_targets:
         for y in y_vars:
-            specs.append(RegressionSpec(f"robustness_lnx__{y}__{original}", "robustness_ln_x", y, target, tuple(cv_subset)))
+            specs.append(RegressionSpec(f"rob_ln_x__{y}__{original}", "rob_ln_x", y, target, tuple(cv_subset)))
     ln_y_targets = []
-    if parse_bool_default_yes(str(getattr(args, "y_ln"))):
-        ln_y_targets.extend((y, f"{y}_rob_ln_{y}") for y in y_vars)
-    ln_y_targets.extend((y, f"{y}_rob_ln_{y}") for y in split_words(rob.get("ln_y", "")))
+    if parse_bool_default_yes(str(getattr(args, "ln_y"))):
+        ln_y_targets.extend((y, f"ln_{y}") for y in y_vars)
+    ln_y_targets.extend((y, f"ln_{y}") for y in split_words(rob.get("ln_y", "")))
     for original, dep in ln_y_targets:
         for x in x_vars:
-            specs.append(RegressionSpec(f"robustness_lny__{original}__{x}", "robustness_ln_y", dep, x, tuple(cv_subset)))
+            specs.append(RegressionSpec(f"rob_ln_y__{original}__{x}", "rob_ln_y", dep, x, tuple(cv_subset)))
     for period in split_words(rob.get("lag", "")):
         for y in y_vars:
             for x in x_vars:
-                specs.append(RegressionSpec(f"robustness_lag__{y}__{x}__l{period}", "robustness_lag", y, f"l{period}_{x}", tuple(cv_subset)))
+                specs.append(RegressionSpec(f"rob_lag__{y}__{x}__l{period}", "rob_lag", y, f"l{period}_{x}", tuple(cv_subset)))
     if str(getattr(args, "rob_year_range")).strip():
         for y in y_vars:
             for x in x_vars:
-                specs.append(RegressionSpec(f"robustness_year__{y}__{x}", "robustness_year", y, x, tuple(cv_subset), str(getattr(args, "timevar")), str(getattr(args, "rob_year_range")).strip()))
+                specs.append(RegressionSpec(f"rob_year__{y}__{x}", "rob_year", y, x, tuple(cv_subset), str(getattr(args, "timevar")), str(getattr(args, "rob_year_range")).strip()))
     for y in y_vars:
         for x in x_vars:
             for iv in split_words(str(getattr(args, "iv"))):
@@ -235,19 +228,19 @@ def build_specs(args: object, cv_subset: list[str]) -> list[RegressionSpec]:
     for med in split_words(str(getattr(args, "meds")))[:1]:
         for y in y_vars:
             for x in x_vars:
-                specs.append(RegressionSpec(f"mediation__{med}__{y}__{x}", f"mediation_{med}", y, x, tuple(cv_subset)))
+                specs.append(RegressionSpec(f"med__{med}__{y}__{x}", f"med_{med}", y, x, tuple(cv_subset)))
         for x in x_vars:
-            specs.append(RegressionSpec(f"mediation__{med}__M__{x}", f"mediation_{med}", med, x, tuple(cv_subset)))
+            specs.append(RegressionSpec(f"med__{med}__M__{x}", f"med_{med}", med, x, tuple(cv_subset)))
     for mod in split_words(str(getattr(args, "mods"))):
         for y in y_vars:
             for x in x_vars:
-                specs.append(RegressionSpec(f"moderation__{mod}__{y}__{x}", f"moderation_{mod}", y, f"interaction_{x}_{mod}", tuple([*cv_subset, f"std_x_{x}", f"std_mod_{mod}"])))
-    discrete = parse_discrete_values(str(getattr(args, "heterogeneity_discrete_values")))
-    for group_var in split_words(str(getattr(args, "heterogeneity_discrete"))):
+                specs.append(RegressionSpec(f"mod__{mod}__{y}__{x}", f"mod_{mod}", y, f"inter_{x}_{mod}", tuple([*cv_subset, f"std_{x}", f"std_{mod}"])))
+    discrete = parse_discrete_values(str(getattr(args, "het_disc_vals")))
+    for group_var in split_words(str(getattr(args, "het_disc"))):
         for y in y_vars:
             for x in x_vars:
                 for value in discrete.get(group_var, []):
-                    specs.append(RegressionSpec(f"heterogeneity_group__{group_var}__{value}__{y}__{x}", f"heterogeneity_discrete_{group_var}", y, x, tuple(cv_subset), group_var, value))
+                    specs.append(RegressionSpec(f"het_disc__{group_var}__{value}__{y}__{x}", f"het_disc_{group_var}", y, x, tuple(cv_subset), group_var, value))
     return specs
 
 

@@ -1,11 +1,13 @@
-"""Compile a guided Starlane analysis plan to regression argument order."""
+"""Compile stage: analysis_plan -> regression args.
+
+IN:  analysis_plan（JSON 或最小 YAML，研究层计划）
+OUT: regression_args.json（执行层结构化契约，供 summary/final stage 使用）
+"""
 
 from __future__ import annotations
 
-import argparse
 import ast
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -139,7 +141,7 @@ def compile_plan_to_structured_args(plan: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("robustness.sample_window must be an object or null")
 
     return {
-        "input_dta": input_path,
+        "data_path": input_path,
         "outcomes": outcomes,
         "explanatory_vars": explanatory,
         "controls": {
@@ -155,8 +157,8 @@ def compile_plan_to_structured_args(plan: dict[str, Any]) -> dict[str, Any]:
             "alternative_outcomes": list_value(robustness.get("alternative_outcomes", [])) if robustness.get("enabled", False) else [],
             "alternative_explanatory_vars": list_value(robustness.get("alternative_explanatory_vars", [])) if robustness.get("enabled", False) else [],
             "lag_periods": [int(value) for value in list_value(robustness.get("lag_periods", []))] if robustness.get("enabled", False) else [],
-            "log_y": bool(robustness.get("log_y", False)) if robustness.get("enabled", False) else False,
-            "log_x": bool(robustness.get("log_x", False)) if robustness.get("enabled", False) else False,
+            "ln_y": bool(robustness.get("ln_y", False)) if robustness.get("enabled", False) else False,
+            "ln_x": bool(robustness.get("ln_x", False)) if robustness.get("enabled", False) else False,
             "sample_window": sample_window if robustness.get("enabled", False) else None,
         },
         "mechanism": {
@@ -176,34 +178,3 @@ def compile_plan_to_structured_args(plan: dict[str, Any]) -> dict[str, Any]:
             "coef_direction": coef_direction,
         },
     }
-
-
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compile Starlane analysis plan to regression args.")
-    parser.add_argument("plan_path", help="Analysis plan JSON or minimal YAML path")
-    parser.add_argument("--output", "-o", help="Output regression args JSON path. Defaults to stdout.")
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    try:
-        args = parse_args(argv or sys.argv[1:])
-        plan = load_plan(Path(args.plan_path))
-        structured = compile_plan_to_structured_args(plan)
-        text = json.dumps(structured, ensure_ascii=False, indent=2)
-        if args.output:
-            out = Path(args.output)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(text + "\n", encoding="utf-8")
-            print(f"STARLANE_REGRESSION_ARGS_OUTPUT: {out}")
-        else:
-            print(text)
-
-        return 0
-    except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

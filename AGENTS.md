@@ -60,7 +60,7 @@ uv run --project skills/starlane-regression python quick-start/run_demo.py --env
 
 - 临时文件写系统 temp 或 run 目录的 `tmp/`，用完即清；不要在仓库里散落草稿文件。
 - `output/` 与 `.starlane/` 已被 gitignore，不要提交它们的内容。
-- runtime 积累过多时用 `scripts/starlane-regression-runtime-status.sh` 查看、`scripts/clean-starlane-regression-runtime.sh` 清理；清理不得删除 `output/starlane-regression/`。
+- runtime 积累过多时用 `scripts/check-starlane-regression-runtime.sh` 查看、`scripts/clean-starlane-regression-runtime.sh` 清理；清理不得删除 `output/starlane-regression/`。
 - 并发跑 demo 或 stage 会互相覆盖公开产物（后写为准），验证时避免并行执行。
 - 并发起多个 Stata 批处理实例时，必须给每个实例独立的 `STATATMP` 目录，否则 `preserve`/`tempfile` 会互相覆盖（parallel 包 1.14 的老坑）；并发 Python 估计进程要把 BLAS/numba 线程数压到 1 防超订。`summary_parallel.py` 已内置这两条，新增并发路径同样遵守。
 

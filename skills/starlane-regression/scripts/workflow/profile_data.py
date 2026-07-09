@@ -1,11 +1,12 @@
-"""Create a Starlane data profile for guided regression setup."""
+"""Profile stage: raw data -> data profile.
+
+IN:  数据文件（.dta / .csv / .xlsx / .xls）
+OUT: profile JSON（变量画像、面板候选、缺失预警；stdout 或 --output）
+"""
 
 from __future__ import annotations
 
-import argparse
-import json
 import math
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -126,32 +127,3 @@ def build_profile(path: Path) -> dict[str, Any]:
         "log_named_candidates": candidates["log_named"],
         "warnings": warnings_for(variables),
     }
-
-
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Create a Starlane data profile JSON file.")
-    parser.add_argument("input_path", help="Input data file: .dta, .csv, .xlsx, or .xls")
-    parser.add_argument("--output", "-o", help="Output JSON path. Defaults to stdout.")
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    try:
-        args = parse_args(argv or sys.argv[1:])
-        profile = build_profile(Path(args.input_path))
-        text = json.dumps(profile, ensure_ascii=False, indent=2)
-        if args.output:
-            out = Path(args.output)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(text + "\n", encoding="utf-8")
-            print(f"STARLANE_PROFILE_OUTPUT: {out}")
-        else:
-            print(text)
-        return 0
-    except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

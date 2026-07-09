@@ -184,11 +184,11 @@ output/starlane-regression/
 │   ├── final_result.csv
 │   ├── final_result.md
 │   ├── final_result.docx
-│   └── regression_generated.py
+│   └── generated_regression.py
 └── stata/
     ├── combination_summary.csv
-    ├── regression_generated.do
-    └── starlane-regression-results.docx
+    ├── generated_regression.do
+    └── final_result.docx
 ```
 
 Internal run evidence is written under the ignored runtime directory:
@@ -218,7 +218,7 @@ executables: given an optional `cv_idx` range they compute exactly that range
 and write one table for it. Chunk scheduling, worker isolation, part merging,
 sorting, and publishing belong to the runner, not to env scripts.
 
-Stata env can override these paths by setting globals before running `scripts/envs/stata/summary.do`:
+Stata env can override these paths by setting globals before running `scripts/envs/stata/build_summary.do`:
 
 ```stata
 global STARLANE_EXPORT "/path/to/export"

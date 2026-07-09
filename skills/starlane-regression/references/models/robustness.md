@@ -42,8 +42,8 @@ Write confirmed values into:
 - `robustness.alternative_outcomes`
 - `robustness.alternative_explanatory_vars`
 - `robustness.lag_periods`
-- `robustness.log_y`
-- `robustness.log_x`
+- `robustness.ln_y`
+- `robustness.ln_x`
 - `robustness.sample_window`
 
 ## Section Schema
@@ -56,12 +56,12 @@ alt_x -> alt_y -> ln_x -> ln_y -> lag -> year
 
 | Check | Enabled by | Formula | Column | Order |
 | --- | --- | --- | --- | --- |
-| Alternative X | `robustness.alternative_explanatory_vars` | `y ~ x_alt + cv_selected` | `robustness_altx__{y}__{x_alt}` | `x_alt -> y` |
-| Alternative Y | `robustness.alternative_outcomes` | `y_alt ~ x + cv_selected` | `robustness_alty__{y_alt}__{x}` | `y_alt -> x` |
-| Log X | `robustness.log_x` | `y ~ ln(x_var) + cv_selected` | `robustness_lnx__{y}__{x_var}` | `x_var -> y` |
-| Log Y | `robustness.log_y` | `ln(y_var) ~ x + cv_selected` | `robustness_lny__{y_var}__{x}` | `y_var -> x` |
-| Lagged X | `robustness.lag_periods` | `y ~ L{p}.x + cv_selected` | `robustness_lag__{y}__{x}__l{p}` | `p -> y -> x` |
-| Time Window | `robustness.sample_window` | `y ~ x + cv_selected` within the selected time window | `robustness_year__{y}__{x}` | `y -> x` |
+| Alternative X | `robustness.alternative_explanatory_vars` | `y ~ x_alt + cv_selected` | `rob_alt_x__{y}__{x_alt}` | `x_alt -> y` |
+| Alternative Y | `robustness.alternative_outcomes` | `y_alt ~ x + cv_selected` | `rob_alt_y__{y_alt}__{x}` | `y_alt -> x` |
+| Log X | `robustness.ln_x` | `y ~ ln(x_var) + cv_selected` | `rob_ln_x__{y}__{x_var}` | `x_var -> y` |
+| Log Y | `robustness.ln_y` | `ln(y_var) ~ x + cv_selected` | `rob_ln_y__{y_var}__{x}` | `y_var -> x` |
+| Lagged X | `robustness.lag_periods` | `y ~ L{p}.x + cv_selected` | `rob_lag__{y}__{x}__l{p}` | `p -> y -> x` |
+| Time Window | `robustness.sample_window` | `y ~ x + cv_selected` within the selected time window | `rob_year__{y}__{x}` | `y -> x` |
 
 Do not generate separate `lc1/lc0` subsample robustness sections.
 
@@ -75,8 +75,8 @@ Env scripts may translate these fields into internal execution variables, but us
 | `robustness.alternative_outcomes` | `robustness.alternative_outcomes` |
 | `robustness.alternative_explanatory_vars` | `robustness.alternative_explanatory_vars` |
 | `robustness.lag_periods` | `robustness.lag_periods` |
-| `robustness.log_y` | `robustness.log_y` |
-| `robustness.log_x` | `robustness.log_x` |
+| `robustness.ln_y` | `robustness.ln_y` |
+| `robustness.ln_x` | `robustness.ln_x` |
 | `robustness.sample_window` | `robustness.sample_window` |
 
 `robustness.lag_periods` contains positive integer periods, not variable names.

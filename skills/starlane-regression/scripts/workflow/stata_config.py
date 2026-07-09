@@ -12,9 +12,8 @@ STATA_ENV_SCRIPTS = Path(__file__).resolve().parents[1] / "envs" / "stata"
 
 # Stata global macro names are limited to 31 chars; "starlane_" occupies 9.
 # Register shorter aliases here when a field name would not fit.
-STATA_ARG_GLOBAL_NAMES = {
-    "heterogeneity_discrete_values": "het_disc_vals",
-}
+# Currently empty: every lexicon field name fits within the limit.
+STATA_ARG_GLOBAL_NAMES: dict[str, str] = {}
 
 
 def quote_stata_arg(value: str) -> str:
@@ -26,7 +25,7 @@ def render_stata_model_plan_config(plan: ModelPlan) -> str:
 
     The current Stata summary env still owns execution loops. This generated
     block is the migration boundary for moving plan-derived rules out of
-    summary.do without making Stata parse nested JSON.
+    build_summary.do without making Stata parse nested JSON.
     """
 
     lines = [
@@ -53,7 +52,7 @@ def render_stata_summary_config(
     probe_only: bool = False,
     cache_dta: Path | None = None,
 ) -> str:
-    """Render the full config .do consumed by scripts/envs/stata/summary.do."""
+    """Render the full config .do consumed by scripts/envs/stata/build_summary.do."""
 
     lines = [
         f'global STARLANE_EXPORT "{export_dir.as_posix()}"',
@@ -86,7 +85,7 @@ def render_stata_summary_runner(config_path: Path, *, single_processor: bool = F
     lines.extend(
         [
             f'do "{config_path.as_posix()}"',
-            f'do "{(STATA_ENV_SCRIPTS / "summary.do").as_posix()}"',
+            f'do "{(STATA_ENV_SCRIPTS / "build_summary.do").as_posix()}"',
             "exit",
         ]
     )

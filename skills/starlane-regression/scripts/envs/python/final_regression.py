@@ -1,13 +1,13 @@
-"""Python final-stage env for a selected Starlane regression row."""
+"""Final regression execution and table rendering for the Python env (library)."""
 
 from __future__ import annotations
 
 import csv
-import json
 import math
 import os
-import sys
 from pathlib import Path
+
+import pandas as pd
 
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
@@ -23,13 +23,11 @@ from common import (
     copy_source_to_dir,
     encode_panel_if_needed,
     ensure_columns,
-    fail,
     format_coef,
-    load_regression_args_json,
-    load_selection_json,
     make_base_sample,
+    parse_discrete_values,
+    parse_rob_vars,
     prepare_regression_data,
-    reject_positional_args,
     read_data,
     run_spec,
     spec_required_columns,
@@ -40,38 +38,34 @@ from common import (
 
 SECTION_TITLES = {
     "baseline": "基准回归",
-    "robustness_alt_x": "稳健性检验-替换X",
-    "robustness_alt_y": "稳健性检验-替换变量",
-    "robustness_ln_x": "稳健性检验-X取对数",
-    "robustness_ln_y": "稳健性检验-Y取对数",
-    "robustness_lag": "稳健性检验-滞后期",
-    "robustness_year": "稳健性检验-时间窗口",
+    "rob_alt_x": "稳健性检验-替换X",
+    "rob_alt_y": "稳健性检验-替换变量",
+    "rob_ln_x": "稳健性检验-X取对数",
+    "rob_ln_y": "稳健性检验-Y取对数",
+    "rob_lag": "稳健性检验-滞后期",
+    "rob_year": "稳健性检验-时间窗口",
     "iv_stage1": "工具变量-一阶段",
     "iv_stage2": "工具变量-二阶段 2SLS",
-    "mediation": "中介机制",
-    "moderation": "异质性分析-调节效应检验",
+    "med": "中介机制",
+    "mod": "异质性分析-调节效应检验",
 }
 
 
 def section_title(section: str) -> str:
     if section in SECTION_TITLES:
         return SECTION_TITLES[section]
-    if section.startswith("mediation_"):
-        return "中介机制"
-    if section.startswith("moderation_"):
-        return f"Moderation: {section.removeprefix('moderation_')}"
-    if section.startswith("heterogeneity_discrete_"):
-        return f"Heterogeneity: {section.removeprefix('heterogeneity_discrete_')}"
+    if section.startswith("het_disc_"):
+        return f"Heterogeneity: {section.removeprefix('het_disc_')}"
     return section.replace("_", " ").title()
 
 
 def doc_section_key(section: str) -> str:
     if section in ("baseline_nocv", "baseline_cv"):
         return "baseline"
-    if section.startswith("mediation_"):
-        return "mediation"
-    if section.startswith("moderation_"):
-        return "moderation"
+    if section.startswith("med_"):
+        return "med"
+    if section.startswith("mod_"):
+        return "mod"
     return section
 
 
@@ -99,11 +93,31 @@ def format_n(value: str | int) -> str:
     return f"{number:,}"
 
 
+def stars_from_p(p_value: object) -> str:
+    try:
+        p = float(p_value)
+    except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(p):
+        return ""
+    if p < 0.01:
+        return "***"
+    if p < 0.05:
+        return "**"
+    if p < 0.1:
+        return "*"
+    return ""
+
+
 def coef_text(row: dict[str, str], variable: str) -> str:
     coefficients = row.get("coefficients", {})
     if not isinstance(coefficients, dict) or variable not in coefficients:
         return ""
-    stars = row["stars"] if variable == row["target"] else ""
+    if variable == row["target"]:
+        stars = row["stars"]
+    else:
+        p_values = row.get("p_values", {})
+        stars = stars_from_p(p_values.get(variable)) if isinstance(p_values, dict) else ""
     return f"{format_decimal(coefficients[variable])}{stars}"
 
 
@@ -216,7 +230,28 @@ def add_regression_table(doc: Document, table_num: int, title: str, rows: list[d
     set_note_cell_borders(note_cell)
 
 
-def write_docx(path: Path, rows: list[dict[str, str]], metadata: dict[str, str]) -> None:
+DESCRIPTIVE_HEADERS = ["VarName", "Obs", "Mean", "SD", "Min", "Median", "Max"]
+
+
+def add_descriptive_table(doc: Document, table_num: int, stats_rows: list[list[str]]) -> None:
+    add_table_title(doc, table_num, "描述性统计")
+    table = doc.add_table(rows=1, cols=len(DESCRIPTIVE_HEADERS))
+    table.style = "Table Grid"
+    for idx, header in enumerate(DESCRIPTIVE_HEADERS):
+        set_cell_text(table.rows[0].cells[idx], header, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    for stats in stats_rows:
+        cells = table.add_row().cells
+        set_cell_text(cells[0], stats[0])
+        for idx, value in enumerate(stats[1:], start=1):
+            set_cell_text(cells[idx], value, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+
+def write_docx(
+    path: Path,
+    rows: list[dict[str, str]],
+    metadata: dict[str, str],
+    descriptive_rows: list[list[str]] | None = None,
+) -> None:
     doc = Document()
     section = doc.sections[0]
     section.page_width = Inches(8.27)
@@ -234,10 +269,58 @@ def write_docx(path: Path, rows: list[dict[str, str]], metadata: dict[str, str])
     for row in rows:
         key = doc_section_key(row["section"])
         grouped.setdefault(key, []).append(row)
+    table_num = 0
     for table_num, (section_name, section_rows) in enumerate(grouped.items(), start=1):
         add_regression_table(doc, table_num, section_title(section_name), section_rows)
+    if descriptive_rows:
+        add_descriptive_table(doc, table_num + 1, descriptive_rows)
 
     doc.save(path)
+
+
+def build_descriptive_var_pool(args: RegressionArgs, cv_subset: list[str]) -> list[str]:
+    """Mirror the Stata env's desc_vars pool: raw analysis variables, deduplicated."""
+    rob = parse_rob_vars(args.rob_vars)
+    discrete = parse_discrete_values(args.het_disc_vals)
+    active_het = [g for g in split_words(args.het_disc) if discrete.get(g)]
+    items = [
+        *split_words(args.y),
+        *split_words(args.x),
+        *cv_subset,
+        *split_words(args.meds),
+        *split_words(args.mods),
+        *active_het,
+        *split_words(args.iv),
+        *split_words(rob.get("alt_x", "")),
+        *split_words(rob.get("alt_y", "")),
+    ]
+    out: list[str] = []
+    for item in items:
+        if item and item not in out:
+            out.append(item)
+    return out
+
+
+def build_descriptive_rows(df: pd.DataFrame, base_sample: pd.Series, variables: list[str]) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for variable in variables:
+        if variable not in df.columns:
+            continue
+        values = pd.to_numeric(df.loc[base_sample, variable], errors="coerce").dropna()
+        if values.empty:
+            continue
+        rows.append(
+            [
+                variable,
+                str(int(values.count())),
+                format_decimal(values.mean()),
+                format_decimal(values.std()),
+                format_decimal(values.min()),
+                format_decimal(values.median()),
+                format_decimal(values.max()),
+            ]
+        )
+    return rows
 
 
 def run_final(
@@ -245,13 +328,11 @@ def run_final(
     *,
     cv_idx: int,
     vce_idx: int,
-    output_arg: str | None = None,
+    output_dir: str | None = None,
     source_path: str | None = None,
 ) -> dict[str, str]:
-    if len(values) < 18:
-        raise ValueError("Expected 18 summary args")
     args = RegressionArgs.from_mapping(values)
-    result_dir = Path(output_arg) if output_arg else Path(os.environ.get("STARLANE_EXPORT", ".starlane"))
+    result_dir = Path(output_dir) if output_dir else Path(os.environ.get("STARLANE_EXPORT", ".starlane"))
     result_dir.mkdir(parents=True, exist_ok=True)
 
     y_vars = split_words(args.y)
@@ -263,7 +344,7 @@ def run_final(
     vce_choice = plan.vce_choice(vce_idx)
 
     optional_originals = split_words(args.meds) + split_words(args.mods) + split_words(args.iv)
-    df = read_data(args.input_dta)
+    df = read_data(args.data_path)
     ensure_columns(df, [*y_vars, *x_vars, *cv_all, args.panelvar, args.timevar, *optional_originals])
     df = prepare_regression_data(df, args)
     df, panelvar = encode_panel_if_needed(df, args.panelvar)
@@ -291,9 +372,10 @@ def run_final(
                 "stars": "*" * stars,
                 "coef_with_stars": format_coef(result, stars),
                 "nobs": "" if result is None else str(result.nobs),
-                "r2": "" if result is None else f"{result.r2:.10g}",
+                "r2": "" if result is None or not math.isfinite(result.r2) else f"{result.r2:.10g}",
                 "coefficients": {} if result is None else result.coefficients,
                 "standard_errors": {} if result is None else result.standard_errors,
+                "p_values": {} if result is None else result.p_values,
                 "instrument": spec.instrument,
             }
         )
@@ -307,7 +389,7 @@ def run_final(
 
     md_path = result_dir / "final_result.md"
     metadata = {
-        "input": args.input_dta,
+        "input": args.data_path,
         "cv_idx": str(cv_idx),
         "vce_idx": str(vce_idx),
         "vce_suffix": vce_choice.suffix,
@@ -328,7 +410,9 @@ def run_final(
     md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     docx_path = result_dir / "final_result.docx"
-    write_docx(docx_path, rows, metadata)
+    desc_vars = build_descriptive_var_pool(args, cv_subset)
+    descriptive_rows = build_descriptive_rows(df, base_sample, desc_vars)
+    write_docx(docx_path, rows, metadata, descriptive_rows)
 
     source_copy = copy_source_to_dir(Path(source_path or __file__), result_dir)
     return {
@@ -337,28 +421,3 @@ def run_final(
         "docx": str(docx_path),
         "source": str(source_copy),
     }
-
-
-def main() -> int:
-    try:
-        reject_positional_args(sys.argv)
-        import argparse
-
-        parser = argparse.ArgumentParser(description="Run Starlane Python final stage from JSON files.")
-        parser.add_argument("--args-json", required=True, help="Path to regression_args.json")
-        parser.add_argument("--selection-json", required=True, help="Path to selected_candidate.json with cv_idx and vce_idx")
-        parser.add_argument("--output", help="Output directory. Defaults to STARLANE_EXPORT or .starlane")
-        ns = parser.parse_args(sys.argv[1:])
-
-        values = load_regression_args_json(ns.args_json)
-        selection = load_selection_json(ns.selection_json)
-        outputs = run_final(values, cv_idx=selection["cv_idx"], vce_idx=selection["vce_idx"], output_arg=ns.output)
-        print(f"STARLANE_FINAL_OUTPUT: {outputs['docx']}")
-        print(f"STARLANE_SOURCE_ARTIFACT: {outputs['source']}")
-        return 0
-    except Exception as e:
-        return fail(str(e))
-
-
-if __name__ == "__main__":
-    sys.exit(main())
