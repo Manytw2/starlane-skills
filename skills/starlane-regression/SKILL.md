@@ -184,6 +184,8 @@ When recommending or selecting a candidate setting, consider:
 - sample size and missingness
 - whether the result looks overfit or fragile
 
+When candidate settings are tied on score, prefer the one with more control variables: a richer control set gives a more conservative specification at no cost in score.
+
 Agents using this skill must:
 
 - keep variable mappings explicit
