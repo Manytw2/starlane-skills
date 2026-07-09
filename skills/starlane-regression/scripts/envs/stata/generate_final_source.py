@@ -15,6 +15,7 @@ if str(WORKFLOW_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(WORKFLOW_SCRIPTS))
 
 from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json  # noqa: E402
+from model_plan import RegressionArgsProxy, build_model_plan  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # Block templates: each maps to regression_summary column structure.
@@ -85,29 +86,6 @@ BLOCK_REG2DOCX_REPLACE = 'reg2docx {models} using "`docxout\'", replace `doc_com
 BLOCK_REG2DOCX_APPEND = 'reg2docx {models} using "`docxout\'", append `doc_common\' title("Table {table_num}: {title}") note("Standard errors in parentheses; *** p<0.01, ** p<0.05, * p<0.1")'
 
 
-def compute_cv_subset(
-    cv_all: list[str], cv_fixed: list[str], cv_min_count: int, cv_idx: int
-) -> str:
-    """Enumerate cv subsets same as regression_summary/regression_full_empirical."""
-    cv_optional = [v for v in cv_all if v not in cv_fixed]
-    n_fixed = len(cv_fixed)
-    n_opt = len(cv_optional)
-    min_extra = max(0, cv_min_count - n_fixed)
-
-    n_valid = 0
-    for i in range(2**n_opt):
-        bits = sum(1 for j in range(n_opt) if (i >> j) & 1)
-        if bits >= min_extra:
-            if n_valid == cv_idx:
-                subset = list(cv_fixed)
-                for j in range(n_opt):
-                    if (i >> j) & 1:
-                        subset.append(cv_optional[j])
-                return " ".join(subset)
-            n_valid += 1
-    raise ValueError("cv_idx out of range for given cv/cv_fixed/cv_min_count")
-
-
 def parse_rob_vars(rob_raw: str) -> dict[str, str]:
     """Parse rob_vars 'type:value|type:value' into dict."""
     out: dict[str, str] = {}
@@ -170,17 +148,6 @@ def format_stata_eq_condition(var_name: str, raw_value: str) -> str:
         return f"{var_name}=={value}"
     escaped = value.replace('"', '""')
     return f'{var_name}=="{escaped}"'
-
-
-def get_vce_option(vce_idx: int, panelvar: str, timevar: str) -> str:
-    """Return Stata vce option body. 0=ols, 1=robust, 2=cluster1, 3=cluster2."""
-    if vce_idx == 0:
-        return "ols"
-    if vce_idx == 1:
-        return "robust"
-    if vce_idx == 2:
-        return f"cluster {panelvar}"
-    return f"cluster {panelvar} {timevar}"
 
 
 def stata_escape(text: str) -> str:
@@ -307,6 +274,7 @@ def build_do_content(
     coef_direction: str,
     export_doc: bool = False,
     result_dir: str = ".",
+    expected_model_count: int | None = None,
 ) -> str:
     """Build full .do file content via template replacement."""
     cv = cv_subset.strip()
@@ -647,6 +615,10 @@ def build_do_content(
         lines.append("")
         lines.append('di "全部结果已导出至: `docxout\'"')
 
+    generated_model_count = m_idx - 1
+    if expected_model_count is not None and generated_model_count != expected_model_count:
+        raise ValueError(f"Generated Stata model count {generated_model_count} does not match ModelPlan spec count {expected_model_count}")
+
     return "\n".join(lines)
 
 
@@ -683,12 +655,12 @@ def main() -> int:
         if vce_idx < 0 or vce_idx > 3:
             raise ValueError("vce_idx must be 0-3 (0=ols, 1=robust, 2=cluster panel, 3=cluster panel+time)")
 
-        cv_all = [v for v in cv_str.split() if v]
-        cv_fixed = [v for v in cv_fixed_str.split() if v]
-        cv_min_count = int(cv_min_count_str) if cv_min_count_str.strip() else 0
-
-        cv_subset = compute_cv_subset(cv_all, cv_fixed, cv_min_count, cv_idx)
-        vce_option = get_vce_option(vce_idx, panelvar, timevar)
+        values = {name: raw_args[idx] for idx, name in enumerate(REGRESSION_ARG_NAMES)}
+        args_proxy = RegressionArgsProxy(values)
+        plan = build_model_plan(args_proxy)
+        cv_subset = " ".join(plan.cv_subset(cv_idx).controls)
+        vce_option = plan.vce_choice(vce_idx).stata_option
+        expected_model_count = len(plan.specs_for_cv_idx(args_proxy, cv_idx))
 
         y_list = [v for v in y_str.split() if v]
         x_list = [v for v in x_str.split() if v]
@@ -738,6 +710,7 @@ def main() -> int:
             coef_direction=coef_direction,
             export_doc=True,
             result_dir=result_dir_val,
+            expected_model_count=expected_model_count,
         )
 
         out.write_text(content, encoding="utf-8")

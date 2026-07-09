@@ -19,8 +19,7 @@ from docx.shared import Inches, Pt
 from common import (
     RegressionArgs,
     apply_spec_condition,
-    build_specs,
-    compute_cv_subset,
+    build_model_plan,
     copy_source_to_dir,
     encode_panel_if_needed,
     ensure_columns,
@@ -36,7 +35,6 @@ from common import (
     spec_required_columns,
     split_words,
     stars_for_result,
-    vce_suffix,
 )
 
 
@@ -259,10 +257,10 @@ def run_final(
     y_vars = split_words(args.y)
     x_vars = split_words(args.x)
     cv_all = split_words(args.cv)
-    cv_fixed = split_words(args.cv_fixed)
-    cv_min_count = int(args.cv_min_count.strip() or "0")
     coef_direction = (args.coef_direction.strip().lower() or "positive")
-    cv_subset = compute_cv_subset(cv_all, cv_fixed, cv_min_count, cv_idx)
+    plan = build_model_plan(args)
+    cv_subset = list(plan.cv_subset(cv_idx).controls)
+    vce_choice = plan.vce_choice(vce_idx)
 
     optional_originals = split_words(args.meds) + split_words(args.mods) + split_words(args.iv)
     df = read_data(args.input_dta)
@@ -270,7 +268,7 @@ def run_final(
     df = prepare_regression_data(df, args)
     df, panelvar = encode_panel_if_needed(df, args.panelvar)
     timevar = args.timevar
-    specs = build_specs(args, cv_subset)
+    specs = list(plan.specs_for_cv_idx(args, cv_idx))
     ensure_columns(df, [panelvar, timevar, *spec_required_columns(specs)])
     base_sample = make_base_sample(df, [panelvar, timevar, *spec_required_columns(specs)])
 
@@ -312,7 +310,7 @@ def run_final(
         "input": args.input_dta,
         "cv_idx": str(cv_idx),
         "vce_idx": str(vce_idx),
-        "vce_suffix": vce_suffix(vce_idx, panelvar, timevar),
+        "vce_suffix": vce_choice.suffix,
         "cv_selected": " ".join(cv_subset),
     }
     md_lines = [

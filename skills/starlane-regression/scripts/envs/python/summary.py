@@ -14,8 +14,7 @@ from typing import Any
 from common import (
     RegressionArgs,
     apply_spec_condition,
-    build_specs,
-    compute_cv_subsets,
+    build_model_plan,
     encode_panel_if_needed,
     ensure_columns,
     fail,
@@ -29,7 +28,6 @@ from common import (
     spec_required_columns,
     split_words,
     stars_for_result,
-    vce_suffix,
     write_csv,
 )
 
@@ -68,8 +66,6 @@ def main() -> int:
         y_vars = split_words(args.y)
         x_vars = split_words(args.x)
         cv_all = split_words(args.cv)
-        cv_fixed = split_words(args.cv_fixed)
-        cv_min_count = int(args.cv_min_count.strip() or "0")
         coef_direction = (args.coef_direction.strip().lower() or "positive")
         if coef_direction not in ("positive", "negative"):
             raise ValueError("coef_direction must be positive or negative")
@@ -87,31 +83,30 @@ def main() -> int:
         export_dir.mkdir(parents=True, exist_ok=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        cv_subsets = compute_cv_subsets(cv_all, cv_fixed, cv_min_count)
-        all_specs = build_specs(args, cv_all)
-        columns = ["selection_id", "cv_idx", "vce_idx", "vce_suffix", "cv_selected", "score"]
-        columns.extend(spec.column for spec in all_specs)
+        plan = build_model_plan(args)
+        columns = list(plan.summary_columns)
         rows: list[dict[str, str]] = []
 
-        loop_items = list(enumerate(cv_subsets))
+        loop_items = [(subset.cv_idx, list(subset.controls)) for subset in plan.cv_subsets]
         if cv_idx_start is not None and cv_idx_end is not None:
             loop_items = [(i, subset) for i, subset in loop_items if cv_idx_start <= i <= cv_idx_end]
-        total_candidates = len(loop_items) * 4
+        vce_choices = list(plan.vce_choices)
+        total_candidates = len(loop_items) * len(vce_choices)
         completed_candidates = 0
         progress.event(
             "summary_progress_initialized",
             total_candidates=total_candidates,
             effective_cv_subset_count=len(loop_items),
-            vce_count=4,
+            vce_count=len(vce_choices),
         )
 
         for cv_idx, cv_subset in loop_items:
-            specs = build_specs(args, cv_subset)
+            specs = list(plan.specs_for_cv_idx(args, cv_idx))
             sample_vars = [panelvar, timevar, *spec_required_columns(specs)]
             ensure_columns(df, sample_vars)
             base_sample = make_base_sample(df, sample_vars)
             if int(base_sample.sum()) < 30:
-                for vce_idx in range(4):
+                for choice in vce_choices:
                     completed_candidates += 1
                     progress.event(
                         "summary_progress",
@@ -119,17 +114,17 @@ def main() -> int:
                         total_candidates=total_candidates,
                         percent_complete=round((completed_candidates / total_candidates) * 100, 2) if total_candidates else 100.0,
                         cv_idx=cv_idx,
-                        vce_idx=vce_idx,
+                        vce_idx=choice.vce_idx,
                     )
                     progress.event(
                         "cv_subset_skipped",
                         cv_idx=cv_idx,
-                        vce_idx=vce_idx,
+                        vce_idx=choice.vce_idx,
                         reason="sample_below_min_n",
                         nobs=int(base_sample.sum()),
                     )
                 continue
-            for vce_idx in range(4):
+            for choice in vce_choices:
                 completed_candidates += 1
                 progress.event(
                     "summary_progress",
@@ -137,13 +132,13 @@ def main() -> int:
                     total_candidates=total_candidates,
                     percent_complete=round((completed_candidates / total_candidates) * 100, 2) if total_candidates else 100.0,
                     cv_idx=cv_idx,
-                    vce_idx=vce_idx,
+                    vce_idx=choice.vce_idx,
                 )
                 row: dict[str, str] = {
-                    "selection_id": f"{cv_idx}_{vce_idx}",
+                    "selection_id": f"{cv_idx}_{choice.vce_idx}",
                     "cv_idx": str(cv_idx),
-                    "vce_idx": str(vce_idx),
-                    "vce_suffix": vce_suffix(vce_idx, panelvar, timevar),
+                    "vce_idx": str(choice.vce_idx),
+                    "vce_suffix": choice.suffix,
                     "cv_selected": "|".join(cv_subset),
                     "score": "0",
                 }
@@ -156,13 +151,13 @@ def main() -> int:
                     if not spec.section.startswith("baseline"):
                         continue
                     spec_sample = apply_spec_condition(df, base_sample, spec)
-                    attempt = run_spec_attempt(df, spec, panelvar, timevar, vce_idx, spec_sample)
+                    attempt = run_spec_attempt(df, spec, panelvar, timevar, choice.vce_idx, spec_sample)
                     result = attempt.result
                     if result is None:
                         progress.event(
                             "spec_result_missing",
                             cv_idx=cv_idx,
-                            vce_idx=vce_idx,
+                            vce_idx=choice.vce_idx,
                             vce_suffix=row["vce_suffix"],
                             section=spec.section,
                             column=spec.column,
@@ -182,13 +177,13 @@ def main() -> int:
                         if spec.section.startswith("baseline"):
                             continue
                         spec_sample = apply_spec_condition(df, base_sample, spec)
-                        attempt = run_spec_attempt(df, spec, panelvar, timevar, vce_idx, spec_sample)
+                        attempt = run_spec_attempt(df, spec, panelvar, timevar, choice.vce_idx, spec_sample)
                         result = attempt.result
                         if result is None:
                             progress.event(
                                 "spec_result_missing",
                                 cv_idx=cv_idx,
-                                vce_idx=vce_idx,
+                                vce_idx=choice.vce_idx,
                                 vce_suffix=row["vce_suffix"],
                                 section=spec.section,
                                 column=spec.column,
@@ -205,7 +200,7 @@ def main() -> int:
                         progress.event(
                             "section_skipped",
                             cv_idx=cv_idx,
-                            vce_idx=vce_idx,
+                            vce_idx=choice.vce_idx,
                             vce_suffix=row["vce_suffix"],
                             section=spec.section,
                             column=spec.column,

@@ -30,7 +30,7 @@ Config globals:
   starlane_meds
   starlane_mods
   starlane_heterogeneity_discrete
-  starlane_heterogeneity_discrete_values
+  starlane_het_disc_vals
   starlane_rob_vars
   starlane_y_ln
   starlane_x_ln
@@ -62,7 +62,7 @@ local timevar_arg "$starlane_timevar"
 local meds_arg "$starlane_meds"
 local mods_arg "$starlane_mods"
 local het_disc_arg "$starlane_heterogeneity_discrete"
-local het_disc_vals_arg "$starlane_heterogeneity_discrete_values"
+local het_disc_vals_arg "$starlane_het_disc_vals"
 local rob_vars_arg "$starlane_rob_vars"
 local y_ln_arg "$starlane_y_ln"
 local x_ln_arg "$starlane_x_ln"
@@ -224,7 +224,7 @@ if "`heterogeneity_discrete_raw'" != "" {
 	// Validate: heterogeneity_discrete must be variable names (e.g. SOE|Region), not parameter names
 	foreach _v of global heterogeneity_discrete {
 		if regexm(`"`_v'"', "^_") | regexm(`"`_v'"', "_arg$") {
-			di as error "Invalid heterogeneity_discrete: `_v'. Pass variable names (e.g. SOE|Region), not parameter names. Values belong in starlane_heterogeneity_discrete_values (e.g. SOE:1;0)."
+			di as error "Invalid heterogeneity_discrete: `_v'. Pass variable names (e.g. SOE|Region), not parameter names. Values belong in starlane_het_disc_vals (e.g. SOE:1;0)."
 			exit 198
 		}
 	}
@@ -303,61 +303,19 @@ if "`iv_raw'" != "" {
 	global iv "`iv_raw'"
 }
 
-// Build cv_optional = cv_all - cv_fixed
-local cv_optional ""
-foreach v of global cv_all {
-	local in_fixed 0
-	foreach f of global cv_fixed {
-		if "`v'" == "`f'" {
-			local in_fixed 1
-			continue
-		}
-	}
-	if !`in_fixed' {
-		local cv_optional "`cv_optional' `v'"
-	}
-}
-global cv_optional `cv_optional'
-
-local n_fixed : word count $cv_fixed
-local n_opt : word count $cv_optional
-local min_extra = max(0, `cv_min_count' - `n_fixed')
-
-// Generate valid cv subsets in memory (no file I/O; use locals for fast access)
-local n_valid 0
-local max_i = 2^`n_opt' - 1
-if `n_opt' == 0 {
-	local max_i 0
-}
-forvalues i = 0/`max_i' {
-	local c 0
-	if `n_opt' > 0 {
-		forvalues j = 1/`n_opt' {
-			local pow = 2^(`j'-1)
-			if mod(int(`i'/`pow'), 2) {
-				local c = `c' + 1
-			}
-		}
-	}
-	if `c' >= `min_extra' {
-		local subs "$cv_fixed"
-		if `n_opt' > 0 {
-			forvalues j = 1/`n_opt' {
-				local pow = 2^(`j'-1)
-				if mod(int(`i'/`pow'), 2) {
-					local w "`=word("$cv_optional", `j')'"
-					local subs "`subs' `w'"
-				}
-			}
-		}
-		local cv_sub_`n_valid' "`subs'"
-		local n_valid = `n_valid' + 1
-	}
+// Load canonical cv subsets generated from workflow/model_plan.py.
+local n_valid = real("$starlane_plan_cv_subset_count")
+if missing(`n_valid') {
+	local n_valid 0
 }
 
 if `n_valid' == 0 {
 	di as error "No valid cv subsets. Check cv_fixed and cv_min_count."
 	exit 198
+}
+
+forvalues cv_plan_idx = 0/`=`n_valid' - 1' {
+	local cv_sub_`cv_plan_idx' "${starlane_plan_cv_sub_`cv_plan_idx'}"
 }
 
 // Probe-only mode: write n_valid and exit (used by parallel orchestrator)
@@ -552,103 +510,11 @@ program define _load_discrete_values_for_var
 	}
 end
 
-// Build column header per user-data-spec (__ as segment separator)
-local col_names "selection_id cv_idx vce_idx vce_suffix cv_selected score"
-foreach y of global y {
-	foreach x of global x {
-		local col_names "`col_names' baseline__`y'__`x'__nocv"
-	}
-}
-foreach y of global y {
-	foreach x of global x {
-		local col_names "`col_names' baseline__`y'__`x'__cv"
-	}
-}
-if "$rob_alt_x" != "" {
-	foreach y of global y {
-		foreach x of global rob_alt_x {
-			local col_names "`col_names' robustness_altx__`y'__`x'"
-		}
-	}
-}
-if "$rob_alt_y" != "" {
-	foreach y of global rob_alt_y {
-		foreach x of global x {
-			local col_names "`col_names' robustness_alty__`y'__`x'"
-		}
-	}
-}
-if "`rob_ln_x_use'" != "" {
-	foreach y of global y {
-		foreach x of local rob_ln_x_use {
-			local x_orig = subinstr("`x'", "_rob_ln_", "", 1)
-			local col_names "`col_names' robustness_lnx__`y'__`x_orig'"
-		}
-	}
-}
-if "`rob_ln_y_use'" != "" {
-	foreach y of local rob_ln_y_use {
-		foreach x of global x {
-			local y_orig = subinstr("`y'", "_rob_ln_", "", 1)
-			local col_names "`col_names' robustness_lny__`y_orig'__`x'"
-		}
-	}
-}
-if "$rob_lag_periods" != "" {
-	foreach p of global rob_lag_periods {
-		foreach y of global y {
-			foreach x of global x {
-				local col_names "`col_names' robustness_lag__`y'__`x'__l`p'"
-			}
-		}
-	}
-}
-if "$rob_year_range_cond" != "" {
-	foreach y of global y {
-		foreach x of global x {
-			local col_names "`col_names' robustness_year__`y'__`x'"
-		}
-	}
-}
-foreach y of global y {
-	foreach x of global x {
-		foreach ivv of global iv {
-			local col_names "`col_names' iv__`y'__`x'__`ivv'__stage1"
-			local col_names "`col_names' iv__`y'__`x'__`ivv'__stage2"
-		}
-	}
-}
-foreach med_var of global meds {
-	foreach y of global y {
-		foreach x of global x {
-			local col_names "`col_names' mediation__`med_var'__`y'__`x'"
-		}
-	}
-	foreach x of global x {
-		local col_names "`col_names' mediation__`med_var'__M__`x'"
-	}
-}
-foreach mod_var of global mods {
-	foreach y of global y {
-		foreach x of global x {
-			local col_names "`col_names' moderation__`mod_var'__`y'__`x'"
-		}
-	}
-}
-* Same (y,x) grouped; within each (y,x), all group values adjacent (align with Stata final source generator)
-foreach group_var of global heterogeneity_discrete {
-	_load_discrete_values_for_var `"$heterogeneity_discrete_values"' "`group_var'" discrete_vals
-	if `discrete_vals_count' <= 0 {
-		continue
-	}
-	foreach y of global y {
-		foreach x of global x {
-			forvalues discrete_idx = 1/`discrete_vals_count' {
-				local group_value_enc `"`discrete_vals_enc_`discrete_idx''"'
-				local col_names "`col_names' heterogeneity_group__`group_var'__`group_value_enc'__`y'__`x'"
-			}
-		}
-	}
+// Column header generated from workflow/model_plan.py.
+local col_names "$starlane_plan_summary_columns"
+if trim("`col_names'") == "" {
+	di as error "Missing starlane_plan_summary_columns. Regenerate Stata summary config."
+	exit 198
 }
 
 // CSV output path: intermediates to temp_dir, final to export_dir
@@ -715,27 +581,28 @@ forvalues cv_idx = `loop_start'/`loop_end' {
 	quietly gen byte __base_sample = e(sample)
 	quietly drop __base_raw_ok
 
-	// Inner loop: VCE types
-	forvalues vce_idx = 1/4 {
-		if `vce_idx' == 1 {
+	// Inner loop: VCE choices generated from workflow/model_plan.py.
+	forvalues vce_idx = 0/3 {
+		local vce_suffix "${starlane_plan_vce_suffix_`vce_idx'}"
+		local vce_option "${starlane_plan_vce_option_`vce_idx'}"
+		if `vce_idx' == 0 {
 			global vce ""
 			local vce_suffix "ols"
 		}
-		else if `vce_idx' == 2 {
+		else if `vce_idx' == 1 {
 			global vce "vce(robust)"
 			local vce_suffix "robust"
 		}
-		else if `vce_idx' == 3 {
+		else if `vce_idx' == 2 {
 			global vce "vce(cluster $cluster_var)"
-			local vce_suffix "cluster_$cluster_var"
+			if "`vce_suffix'" == "" local vce_suffix "cluster_$cluster_var"
 		}
-		else if `vce_idx' == 4 {
+		else if `vce_idx' == 3 {
 			global vce "vce(cluster $cluster_var $cluster_var2)"
-			local vce_suffix "cluster_${cluster_var}_${cluster_var2}"
+			if "`vce_suffix'" == "" local vce_suffix "cluster_${cluster_var}_${cluster_var2}"
 		}
 
-		local vce_idx0 = `vce_idx' - 1
-		local selection_id "`cv_idx'_`vce_idx0'"
+		local selection_id "`cv_idx'_`vce_idx'"
 
 		// Use temp_dir for score accumulation (intermediate; parallel workers share same temp_dir)
 		local scoreaccum "$temp_dir/.score_`cv_idx'_`vce_idx'.dta"
@@ -1033,7 +900,7 @@ forvalues cv_idx = `loop_start'/`loop_end' {
 
 		local score_str = strofreal(scalar(`S_score'))
 		local cv_selected_csv = subinstr("`cv_subset'", " ", "|", .)
-		file write `csv_fh' "`selection_id',`cv_idx',`vce_idx0',`vce_suffix',`cv_selected_csv',`score_str',`row_vals'" _n
+		file write `csv_fh' "`selection_id',`cv_idx',`vce_idx',`vce_suffix',`cv_selected_csv',`score_str',`row_vals'" _n
 
 		* Temp files; cleanup runs periodically.
 	}

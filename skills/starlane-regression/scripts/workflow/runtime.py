@@ -84,7 +84,7 @@ def create_run_context(root: Path, env: str, stage: str, run_id: str | None = No
         outputs_dir=run_dir / "outputs",
         tmp_dir=run_dir / "tmp",
         manifest_path=run_dir / "run.json",
-        public_output_dir=root / "output" / SKILL_NAME,
+        public_output_dir=root / "output" / SKILL_NAME / env,
     )
     for path in (
         context.inputs_dir,

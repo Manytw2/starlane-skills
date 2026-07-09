@@ -124,7 +124,7 @@ uv run --project skills/starlane-regression python skills/starlane-regression/sc
 The summary stage writes:
 
 ```text
-output/starlane-regression/combination_summary.csv
+output/starlane-regression/<env>/combination_summary.csv
 ```
 
 Important columns:
@@ -143,9 +143,15 @@ Starlane separates user-facing outputs from internal run evidence:
 
 ```text
 output/starlane-regression/
-  combination_summary.csv
-  final_result.docx
-  final_source.do
+  python/
+    combination_summary.csv
+    final_result.docx
+    regression_generated.py
+    ...
+  stata/
+    combination_summary.csv
+    regression_generated.do
+    starlane-regression-results.docx
 
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/
@@ -156,9 +162,9 @@ output/starlane-regression/
   run.json
 ```
 
-`output/starlane-regression/` is the user-facing result location. `.starlane/runtime/` is the ignored internal directory for Agent and maintainer diagnostics.
+`output/starlane-regression/<env>/` is the user-facing result location; per-env directories keep same-named artifacts from overwriting each other. `.starlane/runtime/` is the ignored internal directory for Agent and maintainer diagnostics.
 
-Python and Stata envs only execute summary/final logic. The outer runtime helper creates run directories, writes manifests, sets `STARLANE_EXPORT` and `STARLANE_TMP`, publishes public outputs, and cleans `tmp/` after successful runs.
+Python and Stata envs only execute summary/final logic. The orchestration entrypoint `scripts/workflow/run_stage.py` creates run directories, writes manifests, sets `STARLANE_EXPORT` and `STARLANE_TMP`, verifies the summary header against the canonical ModelPlan, publishes public outputs on success, and cleans `tmp/` after successful runs. Chunked summary runs (`--cv-idx-start/--cv-idx-end`) are intermediate artifacts and are not published.
 
 Successful runs do not retain low-value intermediates such as `.score_*.dta`. Failed runs keep logs and tmp files for diagnosis.
 
@@ -183,6 +189,11 @@ skills/starlane-regression/
       iv.md
   scripts/
     workflow/
+      run_stage.py
+      contracts.py
+      model_plan.py
+      stata_emit.py
+      verify_model_plan_drift.py
       profile_data.py
       compile_plan_to_regression_args.py
       runtime.py
@@ -200,8 +211,18 @@ Responsibilities:
 - `references/models/`: model-module guidance, plan fields, section schemas, and interpretation boundaries.
 - `references/output.md`: deliverables and table-output rules.
 - `references/troubleshooting.md`: common failure modes and recovery guidance.
-- `scripts/workflow/`: data profiling, plan compilation, and runtime lifecycle management.
-- `scripts/envs/`: Python / Stata summary, final, and source-generation logic.
+- `scripts/workflow/run_stage.py`: unified orchestration entrypoint for the profile/compile/summary/final stages and publishing.
+- `scripts/workflow/contracts.py`: JSON contract validation for regression args and candidate selection.
+- `scripts/workflow/model_plan.py`: the single source of truth for model enumeration; answers "what should run".
+- `scripts/workflow/stata_emit.py`: renders the ModelPlan into Stata configuration.
+- `scripts/workflow/verify_model_plan_drift.py`: verifies summary artifacts against the canonical ModelPlan.
+- Remaining `scripts/workflow/` files: data profiling, plan compilation, and runtime lifecycle management.
+- `scripts/envs/`: Python / Stata summary, final, and source-generation logic; answers "how this env runs it".
+
+Two auxiliary top-level directories:
+
+- `quick-start/`: demo data and a thin launcher that reuses the `run_stage.py` pipeline.
+- `scripts/` (repository root): runtime cleanup and status helpers, plus `stata-code-examples/` (human-facing example code; agents must not use it as workflow input).
 
 ## Design Choices
 

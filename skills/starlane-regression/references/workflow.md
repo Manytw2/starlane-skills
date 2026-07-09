@@ -258,16 +258,23 @@ Final source generation consumes the compiled regression args JSON plus a `selec
 
 ## Output And Runtime Directories
 
-User-facing outputs should be published to:
+User-facing outputs are published per env:
 
 ```text
 output/starlane-regression/
-├── combination_summary.csv
-├── final_result.docx
-└── final_source.do
+├── python/
+│   ├── combination_summary.csv
+│   ├── final_result.csv
+│   ├── final_result.md
+│   ├── final_result.docx
+│   └── regression_generated.py
+└── stata/
+    ├── combination_summary.csv
+    ├── regression_generated.do
+    └── starlane-regression-results.docx
 ```
 
-Internal run evidence should be written under the ignored runtime directory:
+Internal run evidence is written under the ignored runtime directory:
 
 ```text
 .starlane/runtime/starlane-regression/runs/<run-id>/
@@ -279,11 +286,15 @@ Internal run evidence should be written under the ignored runtime directory:
 └── run.json
 ```
 
-Env scripts do not manage the full runtime lifecycle. They should write outputs
-to `STARLANE_EXPORT` and temporary files to `STARLANE_TMP`. The outer runner is
-responsible for creating the run directory, setting those paths, collecting
-logs, publishing user-facing outputs, updating `run.json`, and cleaning `tmp/`
-after successful runs.
+Env scripts do not manage the full runtime lifecycle. They write outputs to
+`STARLANE_EXPORT` and temporary files to `STARLANE_TMP`. The outer runner
+(`scripts/workflow/run_stage.py`) creates the run directory, sets those paths,
+collects logs, updates `run.json`, verifies the summary header against the
+canonical ModelPlan, publishes user-facing outputs on success, and cleans
+`tmp/` after successful runs.
+
+Chunked summary runs (`--cv-idx-start/--cv-idx-end`) produce partial tables.
+They stay in the run's `outputs/` directory and are not published.
 
 Stata env can override these paths by setting globals before running `scripts/envs/stata/summary.do`:
 

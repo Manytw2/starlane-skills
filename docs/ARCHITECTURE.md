@@ -124,7 +124,7 @@ uv run --project skills/starlane-regression python skills/starlane-regression/sc
 summary 阶段输出：
 
 ```text
-output/starlane-regression/combination_summary.csv
+output/starlane-regression/<env>/combination_summary.csv
 ```
 
 其中：
@@ -143,9 +143,15 @@ Starlane 区分用户可见成果和内部运行证据：
 
 ```text
 output/starlane-regression/
-  combination_summary.csv
-  final_result.docx
-  final_source.do
+  python/
+    combination_summary.csv
+    final_result.docx
+    regression_generated.py
+    ...
+  stata/
+    combination_summary.csv
+    regression_generated.do
+    starlane-regression-results.docx
 
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/
@@ -156,9 +162,9 @@ output/starlane-regression/
   run.json
 ```
 
-`output/starlane-regression/` 是用户查看结果的入口。`.starlane/runtime/` 是 Agent 和开发者排查问题的内部目录，默认被 Git 忽略。
+`output/starlane-regression/<env>/` 是用户查看结果的入口，按 env 分目录避免同名产物互相覆盖。`.starlane/runtime/` 是 Agent 和开发者排查问题的内部目录，默认被 Git 忽略。
 
-Python 和 Stata env 只负责执行 summary/final 逻辑。外层 runtime helper 负责创建 run 目录、写 manifest、设置 `STARLANE_EXPORT` 和 `STARLANE_TMP`、发布 public output，并在成功后清理 `tmp/`。
+Python 和 Stata env 只负责执行 summary/final 逻辑。外层编排入口 `scripts/workflow/run_stage.py` 负责创建 run 目录、写 manifest、设置 `STARLANE_EXPORT` 和 `STARLANE_TMP`、校验 summary 表头与 ModelPlan 一致、在成功后发布 public output 并清理 `tmp/`。分块 summary 跑（`--cv-idx-start/--cv-idx-end`）属于中间产物，不发布。
 
 成功运行后不保留 `.score_*.dta` 这类低价值中间文件。失败运行会保留 logs 和 tmp，方便诊断。
 
@@ -183,6 +189,11 @@ skills/starlane-regression/
       iv.md
   scripts/
     workflow/
+      run_stage.py
+      contracts.py
+      model_plan.py
+      stata_emit.py
+      verify_model_plan_drift.py
       profile_data.py
       compile_plan_to_regression_args.py
       runtime.py
@@ -200,8 +211,18 @@ skills/starlane-regression/
 - `references/models/`：各模型模块的引导方式、plan 字段、section schema 和解释边界。
 - `references/output.md`：输出物和表格规范。
 - `references/troubleshooting.md`：常见失败场景和处理方式。
-- `scripts/workflow/`：数据画像、plan 编译和 runtime 生命周期管理。
-- `scripts/envs/`：Python / Stata 的 summary、final 和源码生成逻辑。
+- `scripts/workflow/run_stage.py`：统一编排入口，负责 profile/compile/summary/final 各阶段与发布。
+- `scripts/workflow/contracts.py`：regression args 和候选选择的 JSON 契约校验。
+- `scripts/workflow/model_plan.py`：模型枚举的单一事实来源，回答"该跑什么"。
+- `scripts/workflow/stata_emit.py`：把 ModelPlan 渲染成 Stata 配置。
+- `scripts/workflow/verify_model_plan_drift.py`：校验 summary 产物与 ModelPlan 是否漂移。
+- `scripts/workflow/` 其余：数据画像、plan 编译和 runtime 生命周期管理。
+- `scripts/envs/`：Python / Stata 的 summary、final 和源码生成逻辑，回答"这个 env 怎么跑"。
+
+仓库顶层还有两个辅助目录：
+
+- `quick-start/`：demo 数据和薄壳启动器，直接复用 `run_stage.py` 管线。
+- `scripts/`（仓库根）：runtime 清理与状态检查脚本，以及 `stata-code-examples/`（仅供人工查看的示例代码，Agent 不得将其作为工作流输入）。
 
 ## 设计取舍
 

@@ -62,7 +62,7 @@ uv run --project skills/starlane-regression python quick-start/run_demo.py --env
 uv run --project skills/starlane-regression python quick-start/run_demo.py --env stata
 ```
 
-运行完成后，用户可见结果会写入 `output/starlane-regression/`。
+运行完成后，用户可见结果会写入 `output/starlane-regression/<env>/`。
 
 ## 开发者安装
 

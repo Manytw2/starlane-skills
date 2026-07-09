@@ -59,26 +59,24 @@ results.
 
 ## Outputs
 
-Generated files are written under:
+The demo calls the same `run_stage.py` pipeline the skill uses, so results are
+published to the same per-env directories:
 
 ```text
-quick-start/output/
-```
-
-Typical Python env outputs:
-
-```text
-quick-start/output/python/combination_summary.csv
-quick-start/output/python/final/regression_generated.py
-quick-start/output/python/final/final_result.csv
-quick-start/output/python/final/final_result.md
-quick-start/output/python/final/final_result.docx
+output/starlane-regression/python/combination_summary.csv
+output/starlane-regression/python/regression_generated.py
+output/starlane-regression/python/final_result.csv
+output/starlane-regression/python/final_result.md
+output/starlane-regression/python/final_result.docx
 ```
 
 Typical Stata env outputs:
 
 ```text
-quick-start/output/stata/combination_summary.csv
-quick-start/output/stata/final/regression_generated.do
-quick-start/output/stata/final/starlane-regression-results.docx
+output/starlane-regression/stata/combination_summary.csv
+output/starlane-regression/stata/regression_generated.do
+output/starlane-regression/stata/starlane-regression-results.docx
 ```
+
+Internal run evidence (inputs, generated sources, logs, manifests) is kept
+under `.starlane/runtime/starlane-regression/runs/<run-id>/`.

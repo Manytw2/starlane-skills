@@ -175,11 +175,13 @@ Do not rely on the user's current workspace Python environment.
 
 ## Summary Stage
 
-The summary stage searches supported combinations and writes:
+The summary stage searches supported combinations and publishes:
 
 ```text
-.starlane/combination_summary.csv
+output/starlane-regression/<env>/combination_summary.csv
 ```
+
+Full runs publish automatically on success and verify the summary header against the canonical ModelPlan. Chunked runs (`--cv-idx-start/--cv-idx-end`) are intermediate artifacts; they stay under the run directory in `.starlane/runtime/` and are not published.
 
 Run summary through JSON files, not positional regression arguments:
 
@@ -238,7 +240,7 @@ It must output:
 - data profile when guided setup mode is used
 - confirmed `analysis_plan` or a clear direct-mode variable mapping
 - compiled regression args or equivalent reproducibility record
-- `.starlane/combination_summary.csv`
+- `output/starlane-regression/<env>/combination_summary.csv`
 - user-selected candidate row or explicitly delegated model-selection choice
 - exact source code used for final execution (`.py` for Python env or `.do` for Stata env)
 - Word regression output when the generated source executes successfully

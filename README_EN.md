@@ -64,7 +64,7 @@ You can also run the Stata env:
 uv run --project skills/starlane-regression python quick-start/run_demo.py --env stata
 ```
 
-After a run completes, user-facing results are written to `output/starlane-regression/`.
+After a run completes, user-facing results are written to `output/starlane-regression/<env>/`.
 
 ## Developer Setup
 

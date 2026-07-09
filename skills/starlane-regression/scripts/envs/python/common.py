@@ -19,6 +19,16 @@ if str(WORKFLOW_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(WORKFLOW_SCRIPTS))
 
 from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json  # noqa: E402
+from model_plan import (  # noqa: E402
+    RegressionSpec,
+    build_model_plan,
+    build_specs,
+    parse_bool_default_yes,
+    parse_discrete_values,
+    parse_rob_vars,
+    spec_required_columns,
+    split_words,
+)
 
 
 @dataclass(frozen=True)
@@ -71,19 +81,6 @@ class RegressionResult:
 
 
 @dataclass(frozen=True)
-class RegressionSpec:
-    column: str
-    section: str
-    depvar: str
-    target_var: str
-    controls: tuple[str, ...]
-    condition_var: str = ""
-    condition_value: str = ""
-    score: bool = True
-    instrument: str = ""
-
-
-@dataclass(frozen=True)
 class RegressionAttempt:
     result: RegressionResult | None
     reason: str = ""
@@ -93,70 +90,6 @@ class RegressionAttempt:
 def reject_positional_args(argv: list[str]) -> None:
     if len(argv) > 1 and not argv[1].startswith("-"):
         raise ValueError("Positional regression args are no longer supported. Use --args-json PATH.")
-
-
-def split_words(raw: str) -> list[str]:
-    return [v for v in raw.replace("|", " ").split() if v]
-
-
-def parse_bool_default_yes(raw: str) -> bool:
-    return raw.strip().lower() in ("", "1", "yes", "true", "是")
-
-
-def parse_rob_vars(raw: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for item in raw.split("|"):
-        item = item.strip()
-        if not item or ":" not in item:
-            continue
-        key, value = item.split(":", 1)
-        out[key.strip()] = value.strip()
-    return out
-
-
-def parse_discrete_values(raw: str) -> dict[str, list[str]]:
-    out: dict[str, list[str]] = {}
-    if not raw.strip():
-        return out
-    for item in raw.split("|"):
-        if ":" not in item:
-            continue
-        key, values = item.split(":", 1)
-        cleaned = [v.strip() for v in values.split(";") if v.strip()]
-        if key.strip() and cleaned:
-            out[key.strip()] = cleaned
-    return out
-
-
-def compute_cv_subsets(cv_all: list[str], cv_fixed: list[str], cv_min_count: int) -> list[list[str]]:
-    optional = [v for v in cv_all if v not in cv_fixed]
-    min_extra = max(0, cv_min_count - len(cv_fixed))
-    out: list[list[str]] = []
-    for mask in range(2 ** len(optional)):
-        chosen = [optional[i] for i in range(len(optional)) if (mask >> i) & 1]
-        if len(chosen) < min_extra:
-            continue
-        out.append([*cv_fixed, *chosen])
-    return out
-
-
-def compute_cv_subset(cv_all: list[str], cv_fixed: list[str], cv_min_count: int, cv_idx: int) -> list[str]:
-    subsets = compute_cv_subsets(cv_all, cv_fixed, cv_min_count)
-    if cv_idx < 0 or cv_idx >= len(subsets):
-        raise ValueError("cv_idx out of range for given cv/cv_fixed/cv_min_count")
-    return subsets[cv_idx]
-
-
-def vce_suffix(vce_idx: int, panelvar: str, timevar: str) -> str:
-    if vce_idx == 0:
-        return "ols"
-    if vce_idx == 1:
-        return "robust"
-    if vce_idx == 2:
-        return f"cluster_{panelvar}"
-    if vce_idx == 3:
-        return f"cluster_{panelvar}_{timevar}"
-    raise ValueError("vce_idx must be 0-3")
 
 
 def read_data(path: str) -> pd.DataFrame:
@@ -225,78 +158,6 @@ def prepare_regression_data(df: pd.DataFrame, args: RegressionArgs) -> pd.DataFr
             for x in x_vars:
                 out[f"interaction_{x}_{mod}"] = out[f"std_x_{x}"] * out[f"std_mod_{mod}"]
     return out
-
-
-def build_specs(args: RegressionArgs, cv_subset: list[str]) -> list[RegressionSpec]:
-    y_vars = split_words(args.y)
-    x_vars = split_words(args.x)
-    rob = parse_rob_vars(args.rob_vars)
-    specs: list[RegressionSpec] = []
-    for y in y_vars:
-        for x in x_vars:
-            specs.append(RegressionSpec(f"baseline__{y}__{x}__nocv", "baseline_nocv", y, x, ()))
-    for y in y_vars:
-        for x in x_vars:
-            specs.append(RegressionSpec(f"baseline__{y}__{x}__cv", "baseline_cv", y, x, tuple(cv_subset)))
-    for alt_x in split_words(rob.get("alt_x", "")):
-        for y in y_vars:
-            specs.append(RegressionSpec(f"robustness_altx__{y}__{alt_x}", "robustness_alt_x", y, alt_x, tuple(cv_subset)))
-    for alt_y in split_words(rob.get("alt_y", "")):
-        for x in x_vars:
-            specs.append(RegressionSpec(f"robustness_alty__{alt_y}__{x}", "robustness_alt_y", alt_y, x, tuple(cv_subset)))
-    ln_x_targets = []
-    if parse_bool_default_yes(args.x_ln):
-        ln_x_targets.extend((x, f"{x}_rob_ln_{x}") for x in x_vars)
-    ln_x_targets.extend((x, f"{x}_rob_ln_{x}") for x in split_words(rob.get("ln_x", "")))
-    for original, target in ln_x_targets:
-        for y in y_vars:
-            specs.append(RegressionSpec(f"robustness_lnx__{y}__{original}", "robustness_ln_x", y, target, tuple(cv_subset)))
-    ln_y_targets = []
-    if parse_bool_default_yes(args.y_ln):
-        ln_y_targets.extend((y, f"{y}_rob_ln_{y}") for y in y_vars)
-    ln_y_targets.extend((y, f"{y}_rob_ln_{y}") for y in split_words(rob.get("ln_y", "")))
-    for original, dep in ln_y_targets:
-        for x in x_vars:
-            specs.append(RegressionSpec(f"robustness_lny__{original}__{x}", "robustness_ln_y", dep, x, tuple(cv_subset)))
-    for period in split_words(rob.get("lag", "")):
-        for y in y_vars:
-            for x in x_vars:
-                specs.append(RegressionSpec(f"robustness_lag__{y}__{x}__l{period}", "robustness_lag", y, f"l{period}_{x}", tuple(cv_subset)))
-    if args.rob_year_range.strip():
-        for y in y_vars:
-            for x in x_vars:
-                specs.append(RegressionSpec(f"robustness_year__{y}__{x}", "robustness_year", y, x, tuple(cv_subset), args.timevar, args.rob_year_range.strip()))
-    for y in y_vars:
-        for x in x_vars:
-            for iv in split_words(args.iv):
-                specs.append(RegressionSpec(f"iv__{y}__{x}__{iv}__stage1", "iv_stage1", x, iv, tuple(cv_subset)))
-                specs.append(RegressionSpec(f"iv__{y}__{x}__{iv}__stage2", "iv_stage2", y, x, tuple(cv_subset), instrument=iv))
-    for med in split_words(args.meds)[:1]:
-        for y in y_vars:
-            for x in x_vars:
-                specs.append(RegressionSpec(f"mediation__{med}__{y}__{x}", f"mediation_{med}", y, x, tuple(cv_subset)))
-        for x in x_vars:
-            specs.append(RegressionSpec(f"mediation__{med}__M__{x}", f"mediation_{med}", med, x, tuple(cv_subset)))
-    for mod in split_words(args.mods):
-        for y in y_vars:
-            for x in x_vars:
-                specs.append(RegressionSpec(f"moderation__{mod}__{y}__{x}", f"moderation_{mod}", y, f"interaction_{x}_{mod}", tuple([*cv_subset, f"std_x_{x}", f"std_mod_{mod}"])))
-    discrete = parse_discrete_values(args.heterogeneity_discrete_values)
-    for group_var in split_words(args.heterogeneity_discrete):
-        for y in y_vars:
-            for x in x_vars:
-                for value in discrete.get(group_var, []):
-                    specs.append(RegressionSpec(f"heterogeneity_group__{group_var}__{value}__{y}__{x}", f"heterogeneity_discrete_{group_var}", y, x, tuple(cv_subset), group_var, value))
-    return specs
-
-
-def spec_required_columns(specs: list[RegressionSpec]) -> list[str]:
-    out: list[str] = []
-    for spec in specs:
-        out.extend([spec.depvar, spec.target_var, *spec.controls])
-        if spec.condition_var:
-            out.append(spec.condition_var)
-    return [c for c in dict.fromkeys(out) if c]
 
 
 def apply_spec_condition(df: pd.DataFrame, sample: pd.Series, spec: RegressionSpec) -> pd.Series:

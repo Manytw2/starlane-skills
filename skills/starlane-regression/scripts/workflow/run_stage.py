@@ -15,12 +15,18 @@ from typing import Any
 from compile_plan_to_regression_args import compile_plan_to_structured_args, load_plan
 from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json
 from profile_data import build_profile
-from runtime import append_command, create_run_context, mark_failed, mark_success, update_manifest
+from runtime import append_command, clean_success_tmp, create_run_context, mark_failed, mark_success, publish_outputs, update_manifest
+from model_plan import RegressionArgsProxy, build_model_plan
+from stata_emit import render_stata_model_plan_config
+from verify_model_plan_drift import check_summary_header
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_ENV_SCRIPTS = SKILL_ROOT / "scripts" / "envs" / "python"
 STATA_ENV_SCRIPTS = SKILL_ROOT / "scripts" / "envs" / "stata"
+STATA_ARG_GLOBAL_NAMES = {
+    "heterogeneity_discrete_values": "het_disc_vals",
+}
 
 
 def find_stata() -> str | None:
@@ -39,6 +45,15 @@ def find_stata() -> str | None:
         if Path(candidate).exists() or shutil.which(candidate):
             return candidate
     return None
+
+
+def stata_status() -> dict[str, str | bool | None]:
+    stata_bin = find_stata()
+    return {
+        "available": bool(stata_bin),
+        "path": stata_bin,
+        "configured_path": os.environ.get("STARLANE_STATA_BIN"),
+    }
 
 
 def quote_stata_arg(value: str) -> str:
@@ -75,13 +90,23 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def publish_run_outputs(context: Any) -> dict[str, str]:
+    """Publish every file in the run's outputs/ directory to the public output dir."""
+    files = sorted(path for path in context.outputs_dir.iterdir() if path.is_file())
+    published = publish_outputs(context, [(path, path.name) for path in files])
+    for name in published.values():
+        print(f"STARLANE_PUBLISHED: {name}")
+    return published
+
+
 def write_stata_summary_config(path: Path, args_values: dict[str, str], export_dir: Path, tmp_dir: Path, cv_idx_start: int | None, cv_idx_end: int | None) -> None:
     lines = [
         f'global STARLANE_EXPORT "{export_dir.as_posix()}"',
         f'global STARLANE_TMP "{tmp_dir.as_posix()}"',
     ]
     for name in REGRESSION_ARG_NAMES:
-        lines.append(f'global starlane_{name} {quote_stata_arg(args_values[name])}')
+        stata_name = STATA_ARG_GLOBAL_NAMES.get(name, name)
+        lines.append(f'global starlane_{stata_name} {quote_stata_arg(args_values[name])}')
     lines.extend(
         [
             f'global starlane_cv_idx_start {quote_stata_arg("" if cv_idx_start is None else str(cv_idx_start))}',
@@ -90,6 +115,8 @@ def write_stata_summary_config(path: Path, args_values: dict[str, str], export_d
             'global starlane_csv_timestamp ""',
         ]
     )
+    lines.append("")
+    lines.append(render_stata_model_plan_config(build_model_plan(RegressionArgsProxy(args_values))).rstrip())
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -141,6 +168,12 @@ def command_compile(ns: argparse.Namespace) -> int:
     return 0
 
 
+def command_status(ns: argparse.Namespace) -> int:
+    status = {"stata": stata_status()}
+    print(json.dumps(status, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_summary(ns: argparse.Namespace) -> int:
     context = create_run_context(Path.cwd(), ns.env, "summary")
     env = {**os.environ, **context.env_vars()}
@@ -184,7 +217,23 @@ def command_summary(ns: argparse.Namespace) -> int:
             write_stata_summary_runner(runner, config)
             append_command(context, [stata_bin, "-b", "do", str(runner)], context.logs_dir / f"{runner.stem}.log")
             run_stata_batch(stata_bin, runner, context.logs_dir)
-        mark_success(context, {"summary": str(context.outputs_dir / "combination_summary.csv")})
+
+        summary_path = context.outputs_dir / "combination_summary.csv"
+        if not summary_path.exists():
+            raise RuntimeError(f"Summary stage finished without producing {summary_path}")
+        verified_columns = check_summary_header(args_values, summary_path)
+        print(f"STARLANE_PLAN_VERIFIED: {verified_columns} columns match the canonical ModelPlan")
+
+        chunked = ns.cv_idx_start is not None or ns.cv_idx_end is not None
+        if chunked:
+            # Chunked runs produce partial tables; they stay in the run directory
+            # and are not published as the user-facing summary.
+            print(f"STARLANE_CHUNK_OUTPUT: {summary_path}")
+            mark_success(context, {"summary": str(summary_path)})
+        else:
+            published = publish_run_outputs(context)
+            mark_success(context, published)
+        clean_success_tmp(context)
         return 0
     except Exception as exc:
         mark_failed(context, str(exc), traceback.format_exc())
@@ -261,7 +310,12 @@ def command_final(ns: argparse.Namespace) -> int:
             )
             append_command(context, [stata_bin, "-b", "do", str(generated_source)], context.logs_dir / f"{generated_source.stem}.log")
             run_stata_batch(stata_bin, generated_source, context.logs_dir)
-        mark_success(context, {"outputs": str(context.outputs_dir)})
+            # The Python env copies its generated source into outputs/ itself;
+            # mirror that for Stata so the published set includes the source.
+            shutil.copyfile(generated_source, context.outputs_dir / generated_source.name)
+        published = publish_run_outputs(context)
+        mark_success(context, published)
+        clean_success_tmp(context)
         return 0
     except Exception as exc:
         mark_failed(context, str(exc), traceback.format_exc())
@@ -290,6 +344,9 @@ def build_parser() -> argparse.ArgumentParser:
     compile_parser.add_argument("--plan", required=True)
     compile_parser.add_argument("--output", required=True)
     compile_parser.set_defaults(func=command_compile)
+
+    status = sub.add_parser("status", help="Show local runtime availability")
+    status.set_defaults(func=command_status)
 
     summary = sub.add_parser("summary", help="Run summary stage")
     summary.add_argument("--env", choices=("python", "stata"), required=True)
