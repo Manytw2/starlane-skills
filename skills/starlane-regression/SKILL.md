@@ -184,7 +184,23 @@ When recommending or selecting a candidate setting, consider:
 - sample size and missingness
 - whether the result looks overfit or fragile
 
-When candidate settings are tied on score, prefer the one with more control variables: a richer control set gives a more conservative specification at no cost in score.
+When several candidate settings have the same top score, do not use the first
+sorted row as the default recommendation. Actively inspect the tied candidates
+and explain the tradeoff before recommending one. Compare at least:
+
+- control-variable count and whether the control set is too sparse for the
+  research convention
+- whether added controls are theoretically reasonable rather than mechanical
+  score padding
+- whether a larger control set appears to introduce missingness, sample-size
+  loss, unstable estimates, or weaker module performance
+- whether the VCE choice remains defensible
+
+In tied-score cases, a moderately richer and theoretically reasonable control
+set is often preferable to the sparsest tied setting, but the fullest control
+set is not automatically best. Recommend the candidate that best balances
+score, conventionally adequate controls, defensible variables, and stability;
+name any close alternatives when useful.
 
 Agents using this skill must:
 
