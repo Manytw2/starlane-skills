@@ -61,7 +61,7 @@ Python 和 Stata 是两种执行环境，不是两条用户工作流。
 - 缺失值处理的包默认行为
 - 生成源码的形态
 - 表格导出方式
-- runtime、依赖和日志说明
+- runtime、依赖和日志证据
 
 项目不追求 Python 和 Stata 逐系数完全一致。更重要的是：同一条 workflow、同一个研究计划、符合各自生态习惯的可复现源码，以及清楚披露估计选择。
 
@@ -83,7 +83,7 @@ Python 和 Stata 是两种执行环境，不是两条用户工作流。
 
 summary 阶段负责枚举候选设定。每套候选设定包含一套共享控制变量组合、一种标准误处理方式，以及所有启用模型模块在这套设定下的结果。它输出的 `combination_summary.csv` 是决策辅助材料，不是自动最终结论。
 
-final 阶段使用用户确认的候选行，生成最终回归输出、运行说明和可复现源码。
+final 阶段使用用户确认的候选行，生成最终回归输出和可复现源码。
 
 ## 关键契约
 
@@ -146,7 +146,6 @@ output/starlane-regression/
   combination_summary.csv
   final_result.docx
   final_source.do
-  run_note.md
 
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/

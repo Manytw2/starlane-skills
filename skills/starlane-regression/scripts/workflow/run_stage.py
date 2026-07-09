@@ -8,13 +8,14 @@ import os
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
 from compile_plan_to_regression_args import compile_plan_to_structured_args, load_plan
 from contracts import REGRESSION_ARG_NAMES, load_regression_args_json, load_selection_json
 from profile_data import build_profile
-from runtime import create_run_context, mark_failed, mark_success
+from runtime import append_command, create_run_context, mark_failed, mark_success, update_manifest
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
@@ -147,6 +148,18 @@ def command_summary(ns: argparse.Namespace) -> int:
         args_path = Path(ns.args_json).resolve()
         args_values = load_regression_args_json(args_path)
         context.write_input_json("regression_args.json", args_values)
+        update_manifest(
+            context,
+            {
+                "args_json": str(args_path),
+                "cv_idx_start": ns.cv_idx_start,
+                "cv_idx_end": ns.cv_idx_end,
+                "runtime": {
+                    **context_manifest_runtime(context),
+                    "skill_root": str(SKILL_ROOT),
+                },
+            },
+        )
         if ns.env == "python":
             cmd = [
                 sys.executable,
@@ -158,7 +171,9 @@ def command_summary(ns: argparse.Namespace) -> int:
                 cmd.extend(["--cv-idx-start", str(ns.cv_idx_start)])
             if ns.cv_idx_end is not None:
                 cmd.extend(["--cv-idx-end", str(ns.cv_idx_end)])
-            run_command(cmd, cwd=Path.cwd(), env=env, log_path=context.logs_dir / "summary.log")
+            log_path = context.logs_dir / "summary.log"
+            append_command(context, cmd, log_path)
+            run_command(cmd, cwd=Path.cwd(), env=env, log_path=log_path)
         else:
             stata_bin = find_stata()
             if not stata_bin:
@@ -167,11 +182,12 @@ def command_summary(ns: argparse.Namespace) -> int:
             runner = context.generated_dir / "run_stata_summary.do"
             write_stata_summary_config(config, args_values, context.outputs_dir, context.tmp_dir, ns.cv_idx_start, ns.cv_idx_end)
             write_stata_summary_runner(runner, config)
+            append_command(context, [stata_bin, "-b", "do", str(runner)], context.logs_dir / f"{runner.stem}.log")
             run_stata_batch(stata_bin, runner, context.logs_dir)
         mark_success(context, {"summary": str(context.outputs_dir / "combination_summary.csv")})
         return 0
     except Exception as exc:
-        mark_failed(context, str(exc))
+        mark_failed(context, str(exc), traceback.format_exc())
         raise
 
 
@@ -183,52 +199,82 @@ def command_final(ns: argparse.Namespace) -> int:
         selection_path = Path(ns.selection_json).resolve()
         context.write_input_json("regression_args.json", load_regression_args_json(args_path))
         context.write_input_json("selected_candidate.json", load_selection_json(selection_path))
+        update_manifest(
+            context,
+            {
+                "args_json": str(args_path),
+                "selection_json": str(selection_path),
+                "runtime": {
+                    **context_manifest_runtime(context),
+                    "skill_root": str(SKILL_ROOT),
+                },
+            },
+        )
         if ns.env == "python":
             generated_source = context.generated_dir / "regression_generated.py"
+            generate_cmd = [
+                sys.executable,
+                str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
+                "--args-json",
+                str(args_path),
+                "--selection-json",
+                str(selection_path),
+                "--output",
+                str(generated_source),
+            ]
+            generate_log = context.logs_dir / "generate_final_source.log"
+            append_command(context, generate_cmd, generate_log)
             run_command(
-                [
-                    sys.executable,
-                    str(PYTHON_ENV_SCRIPTS / "generate_final_source.py"),
-                    "--args-json",
-                    str(args_path),
-                    "--selection-json",
-                    str(selection_path),
-                    "--output",
-                    str(generated_source),
-                ],
+                generate_cmd,
                 cwd=Path.cwd(),
                 env=env,
-                log_path=context.logs_dir / "generate_final_source.log",
+                log_path=generate_log,
             )
-            run_command([sys.executable, str(generated_source)], cwd=Path.cwd(), env=env, log_path=context.logs_dir / "final.log")
+            final_cmd = [sys.executable, str(generated_source)]
+            final_log = context.logs_dir / "final.log"
+            append_command(context, final_cmd, final_log)
+            run_command(final_cmd, cwd=Path.cwd(), env=env, log_path=final_log)
         else:
             stata_bin = find_stata()
             if not stata_bin:
                 raise RuntimeError("No Stata binary found. Set STARLANE_STATA_BIN or install Stata.")
             generated_source = context.generated_dir / "regression_generated.do"
+            generate_cmd = [
+                sys.executable,
+                str(STATA_ENV_SCRIPTS / "generate_final_source.py"),
+                "--args-json",
+                str(args_path),
+                "--selection-json",
+                str(selection_path),
+                "--output",
+                str(generated_source),
+                "--result-dir",
+                str(context.outputs_dir),
+            ]
+            generate_log = context.logs_dir / "generate_final_source.log"
+            append_command(context, generate_cmd, generate_log)
             run_command(
-                [
-                    sys.executable,
-                    str(STATA_ENV_SCRIPTS / "generate_final_source.py"),
-                    "--args-json",
-                    str(args_path),
-                    "--selection-json",
-                    str(selection_path),
-                    "--output",
-                    str(generated_source),
-                    "--result-dir",
-                    str(context.outputs_dir),
-                ],
+                generate_cmd,
                 cwd=Path.cwd(),
                 env=env,
-                log_path=context.logs_dir / "generate_final_source.log",
+                log_path=generate_log,
             )
+            append_command(context, [stata_bin, "-b", "do", str(generated_source)], context.logs_dir / f"{generated_source.stem}.log")
             run_stata_batch(stata_bin, generated_source, context.logs_dir)
         mark_success(context, {"outputs": str(context.outputs_dir)})
         return 0
     except Exception as exc:
-        mark_failed(context, str(exc))
+        mark_failed(context, str(exc), traceback.format_exc())
         raise
+
+
+def context_manifest_runtime(context: Any) -> dict[str, str]:
+    return {
+        "cwd": str(context.root),
+        "python_executable": sys.executable,
+        "python_version": sys.version.split()[0],
+        "estimator_backend": "pyfixest" if context.env == "python" else "stata",
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:

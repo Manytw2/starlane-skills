@@ -332,35 +332,12 @@ def run_final(
     docx_path = result_dir / "final_result.docx"
     write_docx(docx_path, rows, metadata)
 
-    run_note = result_dir / "python_env_run_note.md"
-    run_note.write_text(
-        "\n".join(
-            [
-                "# Python Env Run Note",
-                "",
-                "This Python env implements the Starlane summary/final workflow contract across the same section families as the Stata env.",
-                "",
-                "It uses an internal numpy OLS implementation with absorbed panel and time fixed effects.",
-                "Numerical equivalence with Stata reghdfe is not guaranteed until cross-env tests are added.",
-                "",
-                "Raw args:",
-                "",
-                "```json",
-                json.dumps({"args": args.as_mapping(), "selection": {"cv_idx": cv_idx, "vce_idx": vce_idx}, "result_dir": str(result_dir)}, ensure_ascii=False, indent=2),
-                "```",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
     source_copy = copy_source_to_dir(Path(source_path or __file__), result_dir)
     return {
         "csv": str(csv_path),
         "markdown": str(md_path),
         "docx": str(docx_path),
         "source": str(source_copy),
-        "run_note": str(run_note),
     }
 
 

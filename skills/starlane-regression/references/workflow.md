@@ -16,7 +16,7 @@ user data + variable mapping
 -> generated source artifact for the selected env
 -> run generated source artifact when possible
 -> regression output
--> reproducibility notes
+-> Agent explains reproducibility from runtime evidence when relevant
 ```
 
 Python and Stata are envs, not separate user workflows.
@@ -136,7 +136,7 @@ analysis_plan or direct mapping
 -> generated source artifact
 -> run generated source artifact when possible
 -> regression output
--> reproducibility notes
+-> Agent explains reproducibility from runtime evidence when relevant
 ```
 
 ## Shared Env Requirements
@@ -177,76 +177,9 @@ Envs may differ in:
 
 Do not force one env to mimic the other. Each env should follow publication-grade conventions in its own ecosystem and disclose runtime, packages, versions, and estimation choices.
 
-## Env Mapping
-
-Stata env:
-
-```text
-summary stage -> scripts/envs/stata/summary.do
-final stage -> scripts/envs/stata/generate_final_source.py -> generated .do -> optional Stata execution
-```
-
-Python env:
-
-```text
-summary stage -> uv run --project <skill-root> python scripts/workflow/run_stage.py summary --env python --args-json ...
-final stage -> uv run --project <skill-root> python scripts/workflow/run_stage.py final --env python --args-json ... --selection-json ...
-```
-
-## Python Env
-
-The Python env executes the shared Starlane workflow through Python source and Python ecosystem dependencies.
-
-Python env responsibilities:
-
-- consume compiled regression arguments from the shared workflow
-- run the summary stage
-- generate readable Python final-stage source
-- execute final-stage source when local dependencies are available
-- produce result tables and run notes
-- disclose Python version, packages, and estimator limitations
-
-The production Python estimator env is `pyfixest` unless the workflow is deliberately revised. Do not add a second estimation fallback. If `pyfixest` cannot cover a required model, fail clearly and revise the workflow rather than silently switching libraries.
-
-## Stata Env
-
-The Stata env executes the shared Starlane workflow through generated Stata `.do` source.
-
-Stata env responsibilities:
-
-- consume compiled regression arguments from the shared workflow
-- run the summary stage through Stata code
-- generate readable final-stage `.do` source
-- execute final-stage code when a local Stata runtime is available
-- export tables through Stata ecosystem tools when installed
-- disclose Stata version, commands, user-written packages, and logs
-
-The Stata env should follow Stata ecosystem conventions and disclose the commands used, especially `reghdfe`, `ivreghdfe`, VCE settings, and export packages.
-
-## Invocation Rules
-
-Python scripts in this skill must be invoked through the skill-local uv project:
-
-```text
-uv run --project <skill-root> python scripts/workflow/run_stage.py ...
-```
-
-Do not run workflow scripts with bare `python`, `python3`, or executable shebangs in agent instructions, generated run notes, or tests. Do not rely on the user's current workspace Python environment.
-
-The env entry points consume JSON files. `regression_args.json` is a structured JSON object. Positional regression arguments and regression-args arrays are not supported:
-
-```text
-summary --env python --args-json .starlane/regression_args.json
-final --env python --args-json .starlane/regression_args.json --selection-json .starlane/selected_candidate.json
-```
-
-Legacy top-level wrappers are not part of the current env layout. Use the env-structured entry points under `scripts/workflow/` and `scripts/envs/`.
-
 ## No Cross-Env Numerical Parity Goal
 
-Envs are not required to produce coefficient-by-coefficient identical results.
-
-The goal is:
+Envs are not required to produce coefficient-by-coefficient identical results. The goal is:
 
 ```text
 same workflow
@@ -256,7 +189,7 @@ env-appropriate publication-grade source and reproducibility artifacts
 clear disclosure of estimation choices
 ```
 
-Differences may arise from estimator implementations, degrees-of-freedom corrections, fixed-effect absorption, clustering, missing-data handling, and package defaults.
+Differences may arise from env-specific estimator implementations, degrees-of-freedom corrections, fixed-effect absorption, clustering, missing-data handling, and package defaults.
 
 ## Module Contract Rules
 
@@ -268,18 +201,6 @@ Module section schemas must follow these rules:
 - Section enablement, expansion dimensions, and loop order must be stable.
 - Summary-stage dynamic columns and final-stage model blocks must be isomorphic.
 - All envs use the same module section structure.
-
-## Chunked Summary Runs
-
-Chunked test runs are not full enumeration.
-
-If `cv_idx_start` and `cv_idx_end` are provided, the summary stage only evaluates that inclusive control-subset range.
-
-Full enumeration count is:
-
-```text
-valid control-variable subsets * 4 VCE choices
-```
 
 ## Candidate Selection
 
@@ -343,8 +264,7 @@ User-facing outputs should be published to:
 output/starlane-regression/
 ├── combination_summary.csv
 ├── final_result.docx
-├── final_source.do
-└── run_note.md
+└── final_source.do
 ```
 
 Internal run evidence should be written under the ignored runtime directory:

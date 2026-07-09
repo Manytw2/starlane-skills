@@ -131,7 +131,7 @@ Before suggesting variable roles, say:
 我先根据数据里的列名和基本结构做一个初步判断。因为变量名是你在数据中命名的，我只能从名称、类型、缺失情况和常见经管研究习惯推断变量角色，不能保证理解完全正确；如果某个变量的实际含义和我的推断不一致，以你的解释为准。
 ```
 
-Regression field names may appear in reproducibility notes, generated source explanations, and regression args. They should not be the primary wording for user confirmation.
+Regression field names may appear in reproducibility explanations, generated source explanations, and regression args. They should not be the primary wording for user confirmation.
 
 ## Analysis Plan
 
@@ -231,8 +231,7 @@ It must output:
 
 - exact source code used to produce the result
 - Word regression output produced by running the generated source when the env runtime is available
-- env-specific run note or log
-- reproducibility note
+- env-specific logs and runtime manifest
 
 ## Required Deliverables
 
@@ -243,7 +242,7 @@ It must output:
 - user-selected candidate row or explicitly delegated model-selection choice
 - exact source code used for final execution (`.py` for Python env or `.do` for Stata env)
 - Word regression output when the generated source executes successfully
-- env-specific logs or run notes
-- short model-selection explanation
-- short reproducibility note
+- env-specific logs and runtime manifest
+- short model-selection explanation in the Agent response
+- short reproducibility explanation in the Agent response when relevant
 - limitations and unsupported-causal-language warnings when relevant

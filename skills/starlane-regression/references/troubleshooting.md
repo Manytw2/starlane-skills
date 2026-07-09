@@ -19,7 +19,9 @@ Starlane has one workflow and multiple envs. First decide whether the failure is
 
 - `uv` is unavailable: install or activate `uv`, or run from an environment where skill scripts can be invoked through `uv run --project <skill-root> python`.
 - Data import fails: confirm the file extension is `.dta`, `.csv`, `.xlsx`, or `.xls`; for `.dta`, confirm `pyreadstat`/pandas support the file.
-- Missing dependency: confirm `numpy`, `pandas`, `pyreadstat`, and `python-docx` are declared in the skill-local `pyproject.toml` and run through `uv run --project <skill-root> python`.
+- Missing dependency: confirm `numpy`, `pandas`, `pyfixest`, `pyreadstat`, and `python-docx` are declared in the skill-local `pyproject.toml` and run through `uv run --project <skill-root> python`.
+- Summary progress: inspect `.starlane/runtime/starlane-regression/runs/<run-id>/logs/progress.jsonl` for `current_candidate`, `total_candidates`, and `percent_complete`.
+- Empty summary cells: inspect `spec_result_missing`, `section_skipped`, and `cv_subset_skipped` events in `progress.jsonl`.
 - Word export fails: confirm `python-docx` is installed and the output path is writable.
 - Generated source runs in the wrong directory: run it from the skill directory or use absolute paths in the generated source.
 - Summary succeeds but final fails: confirm final uses the same `regression_args.json` object and a `selected_candidate.json` whose `cv_idx`/`vce_idx` came from the same `combination_summary.csv`.
@@ -77,8 +79,19 @@ Investigate:
 - sorting or lag construction
 - Stata command choices and user-written package versions
 
+## Python Summary Reason Codes
+
+| Reason | Meaning | Suggested check |
+| --- | --- | --- |
+| `sample_below_min_n` | The candidate model has fewer than 30 complete observations. | Check missingness and whether too many controls or subgroup filters are active. |
+| `zero_variance_regressor` | A regressor has no usable variation in the candidate sample. | Check transformed variables, subgroup filters, and lag/log construction. |
+| `linear_algebra_failed` | The estimator hit a matrix-rank or numerical solve failure. | Check collinearity among controls, fixed effects, and the target variable. |
+| `non_finite_values` | The fitted result did not produce a finite target coefficient. | Check infinite values, log transforms, and extreme missingness. |
+| `pyfixest_failed` | `pyfixest` raised an estimator error. | Read the event `detail.message` and the run traceback if the stage failed. |
+| `baseline_gate_not_met` | Non-baseline sections were skipped because baseline-with-controls was not significant in the expected direction. | Review the baseline candidate row before interpreting missing robustness or mechanism cells. |
+
 ## Python Estimator Limitation
 
-The current Python estimator is not the final publication-grade econometrics env.
+The Python estimator backend is `pyfixest`.
 
-If a model is not supported by the selected mature Python econometrics package, fail clearly rather than adding an ad-hoc fallback.
+If a model is not supported by `pyfixest`, fail clearly rather than adding an ad-hoc fallback.

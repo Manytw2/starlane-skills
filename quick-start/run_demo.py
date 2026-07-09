@@ -168,7 +168,6 @@ def run_python_env() -> None:
                 (context.outputs_dir / "final_result.csv", "final_result.csv"),
                 (context.outputs_dir / "final_result.md", "final_result.md"),
                 (context.outputs_dir / "final_result.docx", "final_result.docx"),
-                (context.outputs_dir / "python_env_run_note.md", "python_env_run_note.md"),
             ],
         )
         clean_success_tmp(context)

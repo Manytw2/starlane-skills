@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ class RunContext:
         return {
             "STARLANE_EXPORT": str(self.outputs_dir),
             "STARLANE_TMP": str(self.tmp_dir),
+            "STARLANE_PROGRESS_LOG": str(self.logs_dir / "progress.jsonl"),
         }
 
     def relative_paths(self) -> dict[str, str]:
@@ -93,7 +95,21 @@ def create_run_context(root: Path, env: str, stage: str, run_id: str | None = No
         context.public_output_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)
-    write_manifest(context, status="running", extra={"started_at": utc_now()})
+    write_manifest(
+        context,
+        status="running",
+        extra={
+            "started_at": utc_now(),
+            "logs": default_logs(context),
+            "commands": [],
+            "runtime": {
+                "cwd": str(root),
+                "python_executable": sys.executable,
+                "python_version": sys.version.split()[0],
+                "estimator_backend": "pyfixest" if env == "python" else "stata",
+            },
+        },
+    )
     return context
 
 
@@ -120,12 +136,50 @@ def write_manifest(context: RunContext, status: str, extra: dict[str, Any] | Non
     context.manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def update_manifest(context: RunContext, extra: dict[str, Any]) -> None:
+    write_manifest(context, status=read_manifest(context).get("status", "running"), extra=extra)
+
+
+def append_command(context: RunContext, cmd: list[str], log_path: Path) -> None:
+    data = read_manifest(context)
+    commands = data.get("commands", [])
+    if not isinstance(commands, list):
+        commands = []
+    commands.append(
+        {
+            "cmd": cmd,
+            "log": relative_to_root(context, log_path),
+        }
+    )
+    update_manifest(context, {"commands": commands})
+
+
+def relative_to_root(context: RunContext, path: Path) -> str:
+    try:
+        return str(path.relative_to(context.root))
+    except ValueError:
+        return str(path)
+
+
+def default_logs(context: RunContext) -> dict[str, str]:
+    logs = {"progress": relative_to_root(context, context.logs_dir / "progress.jsonl")}
+    if context.stage == "summary":
+        logs["summary"] = relative_to_root(context, context.logs_dir / "summary.log")
+    if context.stage == "final":
+        logs["generate_final_source"] = relative_to_root(context, context.logs_dir / "generate_final_source.log")
+        logs["final"] = relative_to_root(context, context.logs_dir / "final.log")
+    return logs
+
+
 def mark_success(context: RunContext, outputs: dict[str, str] | None = None) -> None:
     write_manifest(context, status="success", extra={"ended_at": utc_now(), "outputs": outputs or {}})
 
 
-def mark_failed(context: RunContext, error: str) -> None:
-    write_manifest(context, status="failed", extra={"ended_at": utc_now(), "error": error})
+def mark_failed(context: RunContext, error: str, traceback_text: str | None = None) -> None:
+    extra: dict[str, Any] = {"ended_at": utc_now(), "error": error}
+    if traceback_text:
+        extra["traceback"] = traceback_text
+    write_manifest(context, status="failed", extra=extra)
 
 
 def publish_outputs(context: RunContext, mappings: list[tuple[Path, str]]) -> dict[str, str]:

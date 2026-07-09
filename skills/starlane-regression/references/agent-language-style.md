@@ -110,7 +110,7 @@ Thermalinv 可以先作为工具变量候选。我们需要一起判断它是否
 
 Regression arg names may appear in:
 
-- reproducibility notes
+- reproducibility explanations
 - generated source explanations
 - regression args JSON
 - developer-facing debugging

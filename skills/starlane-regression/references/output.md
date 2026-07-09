@@ -23,7 +23,7 @@ Tables should include:
 - fixed-effect indicators
 - clear model titles
 - clear notes for significance levels and standard errors
-- source and reproducibility notes outside the main coefficient table
+- source and reproducibility context outside the main coefficient table when relevant
 
 ## Current Constraint
 

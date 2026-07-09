@@ -61,7 +61,7 @@ They may differ in:
 - package-level missing-data behavior
 - generated source-code shape
 - table export mechanisms
-- runtime, dependency, and log notes
+- runtime, dependency, and log evidence
 
 The project does not require Python and Stata to produce coefficient-by-coefficient identical results. The goal is the same workflow, the same research plan, environment-appropriate reproducible source code, and clear disclosure of estimation choices.
 
@@ -83,7 +83,7 @@ user data or variable mappings
 
 The summary stage enumerates candidate settings. Each candidate setting contains one shared control-variable combination, one standard-error choice, and all enabled model-section results under that setting. The resulting `combination_summary.csv` is a decision aid, not an automatic final conclusion.
 
-The final stage uses the selected candidate row to generate final regression output, run notes, and reproducible source code.
+The final stage uses the selected candidate row to generate final regression output and reproducible source code.
 
 ## Key Contracts
 
@@ -146,7 +146,6 @@ output/starlane-regression/
   combination_summary.csv
   final_result.docx
   final_source.do
-  run_note.md
 
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/
@@ -220,7 +219,7 @@ scripts/envs/python/
 scripts/envs/stata/
 ```
 
-Agent instructions, run notes, and tests should use these paths instead of legacy top-level wrappers.
+Agent instructions and tests should use these paths instead of legacy top-level wrappers.
 
 ### Significance Is Not the Objective Function
 

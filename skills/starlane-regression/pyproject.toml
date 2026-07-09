@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
   "numpy",
   "pandas",
+  "pyfixest>=0.60.0",
   "pyreadstat",
   "python-docx",
 ]

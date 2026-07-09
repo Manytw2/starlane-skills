@@ -33,7 +33,7 @@ The first version focuses on:
 - baseline regressions, control-variable search, and standard-error choices
 - robustness checks, mechanism checks, moderation, heterogeneity, and IV-related checks
 - Python and Stata execution environments
-- candidate summary tables, final regression output, run notes, and reproducible source code
+- candidate summary tables, final regression output, and reproducible source code
 
 ## Quick Start
 
@@ -98,7 +98,7 @@ skills/
 
 Starlane is an empirical-analysis assistant, not a thesis-writing tool or a significance factory.
 
-It keeps variable mappings, model choices, generated source code, and run notes explicit so results can be reproduced. The user remains responsible for the research question, variable definitions, model interpretation, and any causal claims.
+It keeps variable mappings, model choices, generated source code, and internal run evidence explicit so results can be reproduced. The user remains responsible for the research question, variable definitions, model interpretation, and any causal claims.
 
 ## License
 

@@ -12,6 +12,7 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
+import pyfixest as pf
 
 WORKFLOW_SCRIPTS = Path(__file__).resolve().parents[2] / "workflow"
 if str(WORKFLOW_SCRIPTS) not in sys.path:
@@ -60,20 +61,13 @@ class RegressionResult:
     r2: float
     coefficients: dict[str, float]
     standard_errors: dict[str, float]
-
-    @property
-    def t_stat(self) -> float:
-        if not math.isfinite(self.se) or self.se <= 0:
-            return math.nan
-        return self.coef / self.se
+    p_values: dict[str, float]
+    target_name: str
 
     @property
     def p_value(self) -> float:
-        t = abs(self.t_stat)
-        if not math.isfinite(t):
-            return math.nan
-        # Normal approximation. Good enough for regression screening; document if used for publication.
-        return math.erfc(t / math.sqrt(2.0))
+        value = self.p_values.get(self.target_name)
+        return value if value is not None else math.nan
 
 
 @dataclass(frozen=True)
@@ -87,6 +81,13 @@ class RegressionSpec:
     condition_value: str = ""
     score: bool = True
     instrument: str = ""
+
+
+@dataclass(frozen=True)
+class RegressionAttempt:
+    result: RegressionResult | None
+    reason: str = ""
+    detail: dict[str, object] | None = None
 
 
 def reject_positional_args(argv: list[str]) -> None:
@@ -319,57 +320,103 @@ def apply_spec_condition(df: pd.DataFrame, sample: pd.Series, spec: RegressionSp
         return sample & (series.astype(str) == raw)
 
 
-def fit_fe_iv_2sls(
+def pyfixest_vcov(vce_idx: int, panelvar: str, timevar: str) -> str | dict[str, str]:
+    if vce_idx == 0:
+        return "iid"
+    if vce_idx == 1:
+        return "hetero"
+    if vce_idx == 2:
+        return {"CRV1": panelvar}
+    if vce_idx == 3:
+        return {"CRV1": f"{panelvar} + {timevar}"}
+    raise ValueError("vce_idx must be 0-3")
+
+
+def _quote_name(name: str) -> str:
+    escaped = name.replace("`", "\\`")
+    return f"`{escaped}`"
+
+
+def _formula_terms(names: list[str]) -> str:
+    return " + ".join(_quote_name(name) for name in names) if names else "1"
+
+
+def _coerce_numeric(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    out = frame.copy()
+    for col in columns:
+        out[col] = pd.to_numeric(out[col], errors="coerce")
+    return out
+
+
+def _series_value(values: pd.Series, name: str) -> float:
+    if name in values.index:
+        return float(values.loc[name])
+    text_name = str(name)
+    for key, value in values.items():
+        if str(key) == text_name:
+            return float(value)
+    return math.nan
+
+
+def _extract_result(model: object, target_var: str, nobs: int) -> RegressionResult | None:
+    coefs = model.coef()
+    ses = model.se()
+    p_values = model.pvalue()
+    coef = _series_value(coefs, target_var)
+    se = _series_value(ses, target_var)
+    p_value = _series_value(p_values, target_var)
+    if not math.isfinite(coef):
+        return None
+    coefficients = {str(key): float(value) for key, value in coefs.items() if math.isfinite(float(value))}
+    standard_errors = {str(key): float(value) for key, value in ses.items() if math.isfinite(float(value))}
+    p_value_map = {str(key): float(value) for key, value in p_values.items() if math.isfinite(float(value))}
+    return RegressionResult(
+        coef=coef,
+        se=se,
+        nobs=nobs,
+        r2=math.nan,
+        coefficients=coefficients,
+        standard_errors=standard_errors,
+        p_values=p_value_map or {target_var: p_value},
+        target_name=target_var,
+    )
+
+
+def _model_data(
     df: pd.DataFrame,
-    depvar: str,
-    endogenous: str,
-    instrument: str,
-    controls: list[str],
+    sample: pd.Series,
+    columns: list[str],
+    numeric_columns: list[str],
+) -> pd.DataFrame:
+    data = _coerce_numeric(df.loc[sample, columns].copy().reset_index(drop=True), numeric_columns)
+    return data.replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def fit_pyfixest(
+    *,
+    data: pd.DataFrame,
+    formula: str,
+    target_var: str,
+    variance_check_columns: list[str],
     panelvar: str,
     timevar: str,
     vce_idx: int,
-    sample: pd.Series,
-) -> RegressionResult | None:
-    needed = [depvar, endogenous, instrument, *controls, panelvar, timevar]
-    data = df.loc[sample, needed].copy()
-    for col in [depvar, endogenous, instrument, *controls]:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
-    data = data.dropna()
+) -> RegressionAttempt:
     if len(data) < 30:
-        return None
-    columns = [depvar, endogenous, instrument, *controls]
-    transformed = _within_transform(data, columns, panelvar, timevar)
-    transformed = transformed.replace([np.inf, -np.inf], np.nan).dropna()
-    if len(transformed) < 30:
-        return None
-    y = transformed[depvar].to_numpy(dtype=float)
-    x_raw = transformed[[endogenous, *controls]].to_numpy(dtype=float)
-    z_raw = transformed[[instrument, *controls]].to_numpy(dtype=float)
-    if not np.isfinite(y).all() or not np.isfinite(x_raw).all() or not np.isfinite(z_raw).all():
-        return None
-    x_scale = x_raw.std(axis=0)
-    z_scale = z_raw.std(axis=0)
-    if np.any(~np.isfinite(x_scale)) or np.any(x_scale <= 0) or np.any(~np.isfinite(z_scale)) or np.any(z_scale <= 0):
-        return None
-    x = x_raw / x_scale
-    z = z_raw / z_scale
-    with np.errstate(all="ignore"):
-        pzx = z @ (np.linalg.pinv(z.T @ z) @ z.T @ x)
-        beta_scaled = np.linalg.lstsq(pzx, y, rcond=None)[0]
-        resid = y - x @ beta_scaled
-    if not np.isfinite(beta_scaled).all() or not np.isfinite(resid).all():
-        return None
-    cov = _cov_ols(x, resid) if vce_idx == 0 else _cov_hc1(x, resid)
-    if not np.isfinite(cov).all():
-        return None
-    coef = float(beta_scaled[0] / x_scale[0])
-    se = float(math.sqrt(max(cov[0, 0], 0.0)) / x_scale[0]) if cov.size else math.nan
-    sst = float(((y - y.mean()) ** 2).sum())
-    ssr = float((resid**2).sum())
-    r2 = 1.0 - ssr / sst if sst > 0 else math.nan
-    coefficients = {endogenous: coef}
-    standard_errors = {endogenous: se}
-    return RegressionResult(coef=coef, se=se, nobs=int(len(transformed)), r2=r2, coefficients=coefficients, standard_errors=standard_errors)
+        return RegressionAttempt(None, "sample_below_min_n", {"nobs": int(len(data))})
+    zero_variance = [col for col in variance_check_columns if data[col].std() == 0]
+    if zero_variance:
+        return RegressionAttempt(None, "zero_variance_regressor", {"columns": zero_variance, "nobs": int(len(data))})
+    try:
+        model = pf.feols(fml=formula, data=data, vcov=pyfixest_vcov(vce_idx, panelvar, timevar))
+        result = _extract_result(model, target_var, len(data))
+    except np.linalg.LinAlgError as exc:
+        return RegressionAttempt(None, "linear_algebra_failed", {"message": str(exc), "nobs": int(len(data))})
+    except Exception as exc:
+        return RegressionAttempt(None, "pyfixest_failed", {"message": str(exc), "nobs": int(len(data))})
+    if result is None:
+        return RegressionAttempt(None, "non_finite_values", {"nobs": int(len(data))})
+    return RegressionAttempt(result)
 
 
 def run_spec(
@@ -380,19 +427,44 @@ def run_spec(
     vce_idx: int,
     sample: pd.Series,
 ) -> RegressionResult | None:
+    return run_spec_attempt(df, spec, panelvar, timevar, vce_idx, sample).result
+
+
+def run_spec_attempt(
+    df: pd.DataFrame,
+    spec: RegressionSpec,
+    panelvar: str,
+    timevar: str,
+    vce_idx: int,
+    sample: pd.Series,
+) -> RegressionAttempt:
     if spec.section == "iv_stage2" and spec.instrument:
-        return fit_fe_iv_2sls(
-            df,
-            spec.depvar,
-            spec.target_var,
-            spec.instrument,
-            list(spec.controls),
-            panelvar,
-            timevar,
-            vce_idx,
-            sample,
+        controls = list(spec.controls)
+        columns = [spec.depvar, spec.target_var, spec.instrument, *controls, panelvar, timevar]
+        data = _model_data(df, sample, columns, [spec.depvar, spec.target_var, spec.instrument, *controls])
+        formula = f"{_quote_name(spec.depvar)} ~ {_formula_terms(controls)} | {_quote_name(panelvar)} + {_quote_name(timevar)} | {_quote_name(spec.target_var)} ~ {_quote_name(spec.instrument)}"
+        return fit_pyfixest(
+            data=data,
+            formula=formula,
+            target_var=spec.target_var,
+            variance_check_columns=[spec.target_var, spec.instrument, *controls],
+            panelvar=panelvar,
+            timevar=timevar,
+            vce_idx=vce_idx,
         )
-    return fit_fe_ols(df, spec.depvar, spec.target_var, list(spec.controls), panelvar, timevar, vce_idx, sample)
+    regressors = [spec.target_var, *spec.controls]
+    columns = [spec.depvar, *regressors, panelvar, timevar]
+    data = _model_data(df, sample, columns, [spec.depvar, *regressors])
+    formula = f"{_quote_name(spec.depvar)} ~ {_formula_terms(list(regressors))} | {_quote_name(panelvar)} + {_quote_name(timevar)}"
+    return fit_pyfixest(
+        data=data,
+        formula=formula,
+        target_var=spec.target_var,
+        variance_check_columns=list(regressors),
+        panelvar=panelvar,
+        timevar=timevar,
+        vce_idx=vce_idx,
+    )
 
 
 def encode_panel_if_needed(df: pd.DataFrame, panelvar: str) -> tuple[pd.DataFrame, str]:
@@ -410,131 +482,6 @@ def encode_panel_if_needed(df: pd.DataFrame, panelvar: str) -> tuple[pd.DataFram
 
 def make_base_sample(df: pd.DataFrame, vars_: list[str]) -> pd.Series:
     return df[vars_].notna().all(axis=1)
-
-
-def _within_transform(frame: pd.DataFrame, columns: list[str], panelvar: str, timevar: str) -> pd.DataFrame:
-    """Absorb two fixed effects by alternating demeaning.
-
-    This avoids expanding thousands of dummy columns. It is a practical Python
-    regression approximation to the fixed-effect absorption used by reghdfe.
-    """
-    out = frame[columns].astype(float).copy()
-    for _ in range(8):
-        before = out.to_numpy(copy=True)
-        out -= out.groupby(frame[panelvar], sort=False).transform("mean")
-        out -= out.groupby(frame[timevar], sort=False).transform("mean")
-        out += out.mean()
-        if np.nanmax(np.abs(out.to_numpy() - before)) < 1e-10:
-            break
-    return out
-
-
-def _cov_ols(x: np.ndarray, resid: np.ndarray) -> np.ndarray:
-    n, k = x.shape
-    with np.errstate(all="ignore"):
-        xtx_inv = np.linalg.pinv(x.T @ x)
-        sigma2 = float(resid.T @ resid) / max(n - k, 1)
-        return xtx_inv * sigma2
-
-
-def _cov_hc1(x: np.ndarray, resid: np.ndarray) -> np.ndarray:
-    n, k = x.shape
-    with np.errstate(all="ignore"):
-        xtx_inv = np.linalg.pinv(x.T @ x)
-        meat = x.T @ ((resid[:, None] ** 2) * x)
-        scale = n / max(n - k, 1)
-        return scale * xtx_inv @ meat @ xtx_inv
-
-
-def _cluster_meat(x: np.ndarray, resid: np.ndarray, groups: pd.Series) -> np.ndarray:
-    meat = np.zeros((x.shape[1], x.shape[1]))
-    with np.errstate(all="ignore"):
-        for _, idx in groups.groupby(groups, sort=False).groups.items():
-            loc = np.asarray(list(idx))
-            xu = x[loc].T @ resid[loc]
-            meat += np.outer(xu, xu)
-    return meat
-
-
-def _cov_cluster(x: np.ndarray, resid: np.ndarray, groups: pd.Series) -> np.ndarray:
-    n, k = x.shape
-    g = groups.nunique(dropna=True)
-    with np.errstate(all="ignore"):
-        xtx_inv = np.linalg.pinv(x.T @ x)
-        scale = (g / max(g - 1, 1)) * ((n - 1) / max(n - k, 1))
-        return scale * xtx_inv @ _cluster_meat(x, resid, groups.reset_index(drop=True)) @ xtx_inv
-
-
-def _cov_cluster_two_way(x: np.ndarray, resid: np.ndarray, g1: pd.Series, g2: pd.Series) -> np.ndarray:
-    cov1 = _cov_cluster(x, resid, g1)
-    cov2 = _cov_cluster(x, resid, g2)
-    joint = g1.astype(str).reset_index(drop=True) + "__" + g2.astype(str).reset_index(drop=True)
-    cov12 = _cov_cluster(x, resid, joint)
-    return cov1 + cov2 - cov12
-
-
-def fit_fe_ols(
-    df: pd.DataFrame,
-    depvar: str,
-    target_var: str,
-    controls: list[str],
-    panelvar: str,
-    timevar: str,
-    vce_idx: int,
-    sample: pd.Series,
-) -> RegressionResult | None:
-    regressors = [target_var, *controls]
-    needed = [depvar, *regressors, panelvar, timevar]
-    data = df.loc[sample, needed].copy()
-    for col in [depvar, *regressors]:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
-    data = data.dropna()
-    if len(data) < 30:
-        return None
-    transformed = _within_transform(data, [depvar, *regressors], panelvar, timevar)
-    transformed = transformed.replace([np.inf, -np.inf], np.nan).dropna()
-    if len(transformed) < 30:
-        return None
-    y = transformed[depvar].to_numpy(dtype=float)
-    x_raw = transformed[regressors].to_numpy(dtype=float)
-    if not np.isfinite(y).all() or not np.isfinite(x_raw).all():
-        return None
-    scale = x_raw.std(axis=0)
-    if np.any(~np.isfinite(scale)) or np.any(scale <= 0):
-        return None
-    x = x_raw / scale
-    names = regressors
-    try:
-        beta_scaled = np.linalg.lstsq(x, y, rcond=None)[0]
-    except np.linalg.LinAlgError:
-        return None
-    if not np.isfinite(beta_scaled).all():
-        return None
-    with np.errstate(all="ignore"):
-        resid = y - x @ beta_scaled
-    if not np.isfinite(resid).all():
-        return None
-    if vce_idx == 0:
-        cov = _cov_ols(x, resid)
-    elif vce_idx == 1:
-        cov = _cov_hc1(x, resid)
-    elif vce_idx == 2:
-        cov = _cov_cluster(x, resid, data[panelvar])
-    else:
-        cov = _cov_cluster_two_way(x, resid, data[panelvar], data[timevar])
-    idx = names.index(target_var)
-    if not np.isfinite(cov).all():
-        return None
-    unscaled_beta = beta_scaled / scale
-    unscaled_se = np.sqrt(np.maximum(np.diag(cov), 0.0)) / scale if cov.size else np.full(len(names), math.nan)
-    coef = float(unscaled_beta[idx])
-    se = float(unscaled_se[idx])
-    sst = float(((y - y.mean()) ** 2).sum())
-    ssr = float((resid**2).sum())
-    r2 = 1.0 - ssr / sst if sst > 0 else math.nan
-    coefficients = {name: float(value) for name, value in zip(names, unscaled_beta)}
-    standard_errors = {name: float(value) for name, value in zip(names, unscaled_se)}
-    return RegressionResult(coef=coef, se=se, nobs=int(len(transformed)), r2=r2, coefficients=coefficients, standard_errors=standard_errors)
 
 
 def stars_for_result(result: RegressionResult | None, coef_direction: str) -> int:
