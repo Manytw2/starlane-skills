@@ -127,7 +127,7 @@ Do not switch env mid-workflow unless the user asks.
 
 If the selected env cannot execute locally, still generate the source artifact when possible and clearly state that execution was not completed.
 
-Do not use legacy top-level wrapper paths. New implementation files live under `scripts/workflow/` and `scripts/envs/`.
+Implementation files live under `scripts/workflow/` and `scripts/envs/`.
 
 Use the skill-local Python project as the runtime contract:
 

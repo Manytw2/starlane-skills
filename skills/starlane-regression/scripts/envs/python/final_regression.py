@@ -30,6 +30,7 @@ from common import (
     prepare_regression_data,
     read_data,
     run_spec,
+    sample_pool_columns,
     spec_required_columns,
     split_words,
     stars_for_result,
@@ -378,7 +379,9 @@ def run_final(
     timevar = args.timevar
     specs = list(plan.specs_for_cv_idx(args, cv_idx))
     ensure_columns(df, [panelvar, timevar, *spec_required_columns(specs)])
-    base_sample = make_base_sample(df, [panelvar, timevar, *spec_required_columns(specs)])
+    # Base sample anchored on raw variables only (aligned with the Stata env);
+    # derived-column specs (lag/ln/std) lose rows inside their own regression.
+    base_sample = make_base_sample(df, [panelvar, timevar, *sample_pool_columns(args, cv_subset)])
 
     rows: list[dict[str, str]] = []
     for spec in specs:

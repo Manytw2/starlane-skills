@@ -25,6 +25,7 @@ from common import (
     prepare_regression_data,
     read_data,
     run_spec_attempt,
+    sample_pool_columns,
     spec_required_columns,
     split_words,
     stars_for_result,
@@ -101,8 +102,11 @@ def main() -> int:
 
         for cv_idx, cv_subset in loop_items:
             specs = list(plan.specs_for_cv_idx(args, cv_idx))
-            sample_vars = [panelvar, timevar, *spec_required_columns(specs)]
-            ensure_columns(df, sample_vars)
+            ensure_columns(df, [panelvar, timevar, *spec_required_columns(specs)])
+            # Base sample anchored on raw variables only (aligned with the Stata
+            # env): derived-column specs (lag/ln/std) lose rows inside their own
+            # regression instead of shrinking every regression's sample.
+            sample_vars = [panelvar, timevar, *sample_pool_columns(args, cv_subset)]
             base_sample = make_base_sample(df, sample_vars)
             if int(base_sample.sum()) < 30:
                 for choice in vce_choices:

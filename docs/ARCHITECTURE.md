@@ -234,9 +234,9 @@ skills/starlane-regression/
 
 当前只有一个稳定 skill：`starlane-regression`。共享规范先放在它自己的 `references/` 内部。等出现第二个稳定 skill，并且产生真实复用需求后，再抽共享层。
 
-### 不保留旧顶层 wrapper
+### 执行入口按职责分目录
 
-当前执行入口按职责放在：
+执行入口按职责放在：
 
 ```text
 scripts/workflow/
@@ -244,7 +244,7 @@ scripts/envs/python/
 scripts/envs/stata/
 ```
 
-Agent 文档、运行说明和测试都应该使用这些路径，不再引用旧的顶层 wrapper。
+Agent 文档、运行说明和测试都应该使用这些路径。
 
 ### 不把显著性当目标函数
 

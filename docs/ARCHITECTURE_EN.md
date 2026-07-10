@@ -234,9 +234,9 @@ Two auxiliary top-level directories:
 
 The project currently has one stable skill: `starlane-regression`. Shared contracts remain inside its own `references/` directory. A shared layer should be introduced only after a second stable skill creates real reuse pressure.
 
-### No Legacy Top-Level Wrappers
+### Entrypoints Organized by Responsibility
 
-Current execution entrypoints are organized by responsibility:
+Execution entrypoints are organized by responsibility:
 
 ```text
 scripts/workflow/
@@ -244,7 +244,7 @@ scripts/envs/python/
 scripts/envs/stata/
 ```
 
-Agent instructions and tests should use these paths instead of legacy top-level wrappers.
+Agent instructions and tests should use these paths.
 
 ### Significance Is Not the Objective Function
 

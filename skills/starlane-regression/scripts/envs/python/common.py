@@ -26,6 +26,7 @@ from model_plan import (  # noqa: E402
     parse_bool_default_yes,
     parse_discrete_values,
     parse_rob_vars,
+    sample_pool_columns,
     spec_required_columns,
     split_words,
 )

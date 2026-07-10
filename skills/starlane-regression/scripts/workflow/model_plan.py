@@ -244,6 +244,27 @@ def build_specs(args: object, cv_subset: list[str]) -> list[RegressionSpec]:
     return specs
 
 
+def sample_pool_columns(args: Any, cv_subset: list[str]) -> list[str]:
+    """Raw columns anchoring the shared base sample (aligned with the Stata env).
+
+    Derived columns (ln_*, l{p}_*, std_*, inter_*) are excluded on purpose:
+    specs that use them (rob_ln_x/rob_ln_y/rob_lag/mod_*) lose observations
+    inside their own regression instead of shrinking the shared base sample.
+    """
+    rob = parse_rob_vars(str(getattr(args, "rob_vars")))
+    out: list[str] = []
+    out.extend(split_words(str(getattr(args, "y"))))
+    out.extend(split_words(str(getattr(args, "x"))))
+    out.extend(cv_subset)
+    out.extend(split_words(str(getattr(args, "meds"))))
+    out.extend(split_words(str(getattr(args, "mods"))))
+    out.extend(split_words(str(getattr(args, "het_disc"))))
+    out.extend(split_words(str(getattr(args, "iv"))))
+    out.extend(split_words(rob.get("alt_x", "")))
+    out.extend(split_words(rob.get("alt_y", "")))
+    return [c for c in dict.fromkeys(out) if c]
+
+
 def spec_required_columns(specs: list[RegressionSpec]) -> list[str]:
     out: list[str] = []
     for spec in specs:
