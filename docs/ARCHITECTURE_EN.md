@@ -83,7 +83,7 @@ user data or variable mappings
 
 The summary stage enumerates candidate settings. Each candidate setting contains one shared control-variable combination, one standard-error choice, and all enabled model-section results under that setting. The resulting `combination_summary.csv` is a decision aid, not an automatic final conclusion.
 
-The final stage uses the selected candidate row to generate final regression output and reproducible source code.
+The final stage uses the selected candidate row to generate final regression output and reproducible source code. Generated sources in both envs (`.py` / `.do`) must be self-contained: all regression specs are expanded at generation time, and the file depends only on public packages in its own ecosystem (pyfixest/python-docx or reghdfe/reg2docx), never on scripts inside this repository.
 
 ## Key Contracts
 
