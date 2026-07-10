@@ -60,6 +60,24 @@ het_disc = SOE|Region
 het_disc_vals = SOE:1;0|Region:East;West
 ```
 
+## Group N vs Full-Sample N
+
+Group Ns are not required to sum to the full-sample N. Both `reghdfe` and
+`pyfixest` drop singleton fixed effects, and splitting the base sample by a
+group variable can create new singletons: an entity whose group membership
+changes over time may have only one observation left inside a group, and that
+observation is dropped from the group regression.
+
+- Time-invariant group variables (each entity stays in one group) do not
+  create new singletons, so their group Ns sum exactly to the full-sample N.
+- Time-varying group variables (e.g. ownership changes, entering/leaving a
+  classification) typically leave the group-N sum slightly below the
+  full-sample N. This is standard two-way fixed-effects behavior, not a
+  sampling bug; note it in the table footnote instead of "fixing" it.
+
+Both envs report the post-drop effective N (Stata `e(N)`; Python uses the
+pyfixest effective N).
+
 ## Boundaries
 
 Do not create arbitrary groups only to search for significant results.

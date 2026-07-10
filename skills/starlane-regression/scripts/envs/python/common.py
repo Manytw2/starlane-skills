@@ -241,10 +241,16 @@ def _extract_result(model: object, target_var: str, nobs: int) -> RegressionResu
     coefficients = {str(key): float(value) for key, value in coefs.items() if math.isfinite(float(value))}
     standard_errors = {str(key): float(value) for key, value in ses.items() if math.isfinite(float(value))}
     p_value_map = {str(key): float(value) for key, value in p_values.items() if math.isfinite(float(value))}
+    # Effective estimation N (after pyfixest drops singleton fixed effects),
+    # aligned with Stata e(N); fall back to the pre-fit row count.
+    try:
+        effective_nobs = int(getattr(model, "_N"))
+    except (AttributeError, TypeError, ValueError):
+        effective_nobs = nobs
     return RegressionResult(
         coef=coef,
         se=se,
-        nobs=nobs,
+        nobs=effective_nobs,
         r2=_adjusted_r2(model),
         coefficients=coefficients,
         standard_errors=standard_errors,

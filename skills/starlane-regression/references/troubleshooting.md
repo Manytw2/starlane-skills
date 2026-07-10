@@ -65,6 +65,12 @@ If summary generation succeeds but final generation fails, check that:
 - the selected env is the same env intended for final source generation
 - the generated source file points to a writable output path
 
+## Heterogeneity Group Ns Do Not Sum To Full-Sample N
+
+Expected when the group variable is time-varying: subsample splits create new
+singleton fixed effects, which `reghdfe`/`pyfixest` drop. See "Group N vs
+Full-Sample N" in `references/models/heterogeneity.md`.
+
 ## Result Difference Diagnosis
 
 Do not debug Python and Stata results by forcing coefficient-by-coefficient equality.
