@@ -1,21 +1,21 @@
 #!/usr/bin/env sh
 set -eu
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SKILL_NAME="starlane-regression"
 SKILL_DIR="$ROOT/skills/$SKILL_NAME"
 RELEASE_DIR="$ROOT/release/redskill"
-REDSKILL_README="$RELEASE_DIR/README.md"
+REDSKILL_README="$ROOT/scripts/redskill-release/README.md"
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/build-redskill-release.sh VERSION
+  scripts/redskill-release/build-redskill-release.sh VERSION
 
 Build the Red Skill upload zip for starlane-regression.
 
 Example:
-  scripts/build-redskill-release.sh v1.0.0
+  scripts/redskill-release/build-redskill-release.sh v1.0.0
 EOF
 }
 
