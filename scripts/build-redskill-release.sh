@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SKILL_NAME="starlane-regression"
 SKILL_DIR="$ROOT/skills/$SKILL_NAME"
 RELEASE_DIR="$ROOT/release/redskill"
+REDSKILL_README="$RELEASE_DIR/README.md"
 
 usage() {
   cat <<'EOF'
@@ -51,6 +52,11 @@ if [ ! -d "$SKILL_DIR/references" ]; then
   exit 1
 fi
 
+if [ ! -f "$REDSKILL_README" ]; then
+  echo "Missing Red Skill package README: ${REDSKILL_README#$ROOT/}" >&2
+  exit 1
+fi
+
 tmp_root="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_root"
@@ -61,6 +67,7 @@ package_dir="$tmp_root/$SKILL_NAME"
 mkdir -p "$package_dir"
 
 cp "$SKILL_DIR/SKILL.md" "$package_dir/"
+cp "$REDSKILL_README" "$package_dir/README.md"
 cp -R "$SKILL_DIR/references" "$package_dir/"
 
 find "$package_dir" -name '.DS_Store' -type f -delete
@@ -86,6 +93,16 @@ fi
 
 if ! zipinfo -1 "$ZIP_PATH" | grep -qx "$SKILL_NAME/SKILL.md"; then
   echo "Release zip is missing $SKILL_NAME/SKILL.md" >&2
+  exit 1
+fi
+
+if ! zipinfo -1 "$ZIP_PATH" | grep -qx "$SKILL_NAME/README.md"; then
+  echo "Release zip is missing $SKILL_NAME/README.md" >&2
+  exit 1
+fi
+
+if zipinfo -1 "$ZIP_PATH" | grep -Eq '(^|/)(scripts/|pyproject\.toml$|uv\.lock$|.*\.do$)'; then
+  echo "Release zip includes files filtered by Red SkillHub; keep this package to docs only." >&2
   exit 1
 fi
 

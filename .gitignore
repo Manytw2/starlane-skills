@@ -5,3 +5,4 @@ quick-start/output/
 .venv/
 __pycache__/
 *.py[cod]
+release/redskill/*.zip
