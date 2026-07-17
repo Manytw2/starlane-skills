@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starlane Data Finder"
+  short_description: "Find and collect empirical data from supported sources."
+  default_prompt: "Use $starlane-data-finder to find and collect CSMAR data for my empirical study."
