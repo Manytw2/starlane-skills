@@ -59,13 +59,6 @@ uv sync --project skills/starlane-regression
 uv run --project skills/starlane-regression python quick-start/run_demo.py --env python
 ```
 
-数据清洗 demo：
-
-```bash
-uv sync --project skills/starlane-data-cleaner
-uv run --project skills/starlane-data-cleaner python quick-start/data-cleaner/run_demo.py
-```
-
 也可以选择 Stata env：
 
 ```bash
