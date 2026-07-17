@@ -1,0 +1,111 @@
+{
+  "target": {
+    "unit": "firm-year",
+    "key": [
+      "firm_id",
+      "year"
+    ],
+    "required_vars": [
+      "firm_id",
+      "year",
+      "y",
+      "x",
+      "asset"
+    ],
+    "critical_vars": [
+      "y",
+      "x",
+      "asset"
+    ]
+  },
+  "inputs": [
+    {
+      "name": "firm_basic",
+      "path": "/Users/daydream/dev/starlane-skills/quick-start/data-cleaner/raw/firm_basic.csv",
+      "role": "master"
+    },
+    {
+      "name": "finance",
+      "path": "/Users/daydream/dev/starlane-skills/quick-start/data-cleaner/raw/finance.csv",
+      "role": "using"
+    }
+  ],
+  "operations": [
+    {
+      "op": "rename",
+      "dataset": "firm_basic",
+      "columns": {
+        "FirmID": "firm_id",
+        "年份": "year",
+        "Y": "y",
+        "X": "x"
+      }
+    },
+    {
+      "op": "cast",
+      "dataset": "firm_basic",
+      "columns": {
+        "firm_id": "string",
+        "year": "int"
+      }
+    },
+    {
+      "op": "pad",
+      "dataset": "firm_basic",
+      "columns": {
+        "firm_id": 3
+      }
+    },
+    {
+      "op": "cast",
+      "dataset": "finance",
+      "columns": {
+        "firm_id": "string",
+        "year": "int"
+      }
+    },
+    {
+      "op": "trim",
+      "dataset": "finance",
+      "columns": [
+        "firm_id"
+      ]
+    },
+    {
+      "op": "pad",
+      "dataset": "finance",
+      "columns": {
+        "firm_id": 3
+      }
+    },
+    {
+      "op": "merge",
+      "name": "merge_finance",
+      "left": "firm_basic",
+      "right": "finance",
+      "type": "m:1",
+      "keys": [
+        "firm_id",
+        "year"
+      ],
+      "unmatched": "keep_left_with_flag"
+    },
+    {
+      "op": "set_output",
+      "dataset": "merge_finance"
+    }
+  ],
+  "validation": {
+    "require_unique_target_key": true,
+    "max_critical_missing_rate": 0.25,
+    "max_unmatched_rate": 0.25,
+    "allow_row_expansion": false
+  },
+  "output": {
+    "dataset_name": "analysis_data",
+    "formats": [
+      "csv"
+    ],
+    "directory": "/Users/daydream/dev/starlane-skills/output/starlane-data-cleaner/python"
+  }
+}

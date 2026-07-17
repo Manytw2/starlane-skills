@@ -4,15 +4,18 @@ This document explains the current structure and main design choices of Starlane
 
 ## Project Positioning
 
-Starlane Skills is not a collection of standalone regression scripts. It is an Agent-guided empirical-analysis workflow.
+Starlane Skills is not a collection of standalone scripts. It is a set of Agent-guided empirical-analysis workflows.
 
-The current production entrypoint is:
+The current production entrypoints are:
 
 ```text
 skills/starlane-regression/SKILL.md
+skills/starlane-data-cleaner/SKILL.md
 ```
 
 A user can start from a data file, partial variable mappings, or a research idea. The Agent first turns the research setup into one `analysis_plan`, then compiles that plan into executable regression arguments, and finally runs the summary and final stages through a selected Python or Stata environment.
+
+Data cleaning and merging tasks enter through `starlane-data-cleaner`. The Agent first confirms the target analysis dataset's observation unit, keys, required variables, and merge relationships, then generates or revises a `cleaning_plan` for the stable Python engine to clean, merge, diagnose, and report.
 
 ## Core Principles
 
@@ -64,6 +67,16 @@ They may differ in:
 - runtime, dependency, and log evidence
 
 The project does not require Python and Stata to produce coefficient-by-coefficient identical results. The goal is the same workflow, the same research plan, environment-appropriate reproducible source code, and clear disclosure of estimation choices.
+
+### Cleaning Loops Revise Plans, Not Engines
+
+The ordinary `starlane-data-cleaner` loop is:
+
+```text
+profile -> cleaning_plan -> run -> diagnostics -> revise cleaning_plan -> rerun
+```
+
+The AI understands the goal, generates or revises `cleaning_plan`, explains diagnostics, and recommends parameter choices. The stable engine interprets the plan, runs supported cleaning and merge operations, writes data, and writes diagnostics. Ordinary cleaning tasks do not patch engine code or manually edit output datasets. Missing engine capabilities should be proposed as development work.
 
 ## Workflow
 
@@ -119,6 +132,22 @@ Compiler entrypoint:
 uv run --project skills/starlane-regression python skills/starlane-regression/scripts/workflow/run_stage.py compile ...
 ```
 
+### `cleaning_plan`
+
+`cleaning_plan` is the execution-layer contract for `starlane-data-cleaner`. It describes the target dataset, input files, parameterized cleaning and merge operations, validation thresholds, and output location.
+
+The ordinary loop revises only `cleaning_plan`:
+
+```text
+skills/starlane-data-cleaner/references/cleaning-plan-schema.md
+```
+
+Runner entrypoint:
+
+```text
+uv run --project skills/starlane-data-cleaner python skills/starlane-data-cleaner/scripts/workflow/run_stage.py run --plan ...
+```
+
 ### Candidate Setting Selection
 
 The summary stage writes:
@@ -153,6 +182,13 @@ output/starlane-regression/
     generated_regression.do
     final_result.docx
 
+output/starlane-data-cleaner/
+  python/
+    analysis_data.csv
+    cleaning_plan.json
+    cleaning_diagnostics.json
+    cleaning_report.md
+
 .starlane/runtime/starlane-regression/runs/<run-id>/
   inputs/
   generated/
@@ -163,6 +199,8 @@ output/starlane-regression/
 ```
 
 `output/starlane-regression/<env>/` is the user-facing result location; per-env directories keep same-named artifacts from overwriting each other. `.starlane/runtime/` is the ignored internal directory for Agent and maintainer diagnostics.
+
+`output/starlane-data-cleaner/python/` is the data-cleaner user-facing output location. The first data-cleaner implementation keeps runtime lightweight: reproducibility fields are written into diagnostics, and the final plan is copied into public output.
 
 Python and Stata envs only execute summary/final logic. The orchestration entrypoint `scripts/workflow/run_stage.py` creates run directories, writes manifests, sets `STARLANE_EXPORT` and `STARLANE_TMP`, verifies the summary header against the canonical ModelPlan, publishes public outputs on success, and cleans `tmp/` after successful runs. Chunked summary runs (`--cv-idx-start/--cv-idx-end`) are intermediate artifacts and are not published.
 
@@ -203,6 +241,27 @@ skills/starlane-regression/
     envs/
       python/
       stata/
+
+skills/starlane-data-cleaner/
+  SKILL.md
+  references/
+    workflow.md
+    cleaning-plan-schema.md
+    data-quality-rubric.md
+    agent-language-style.md
+    output.md
+    troubleshooting.md
+  scripts/
+    workflow/
+      run_stage.py
+      profile_data.py
+      execute_plan.py
+      validate_output.py
+      contracts.py
+      report.py
+      runtime.py
+    envs/
+      python/
 ```
 
 Responsibilities:
@@ -223,6 +282,17 @@ Responsibilities:
 - Remaining `scripts/workflow/` files: data profiling, plan compilation, and runtime lifecycle management.
 - `scripts/envs/`: Python / Stata summary, final, and source-generation logic; answers "how this env runs it".
 
+`starlane-data-cleaner` responsibilities:
+
+- `SKILL.md`: Agent entrypoint, plan-run-diagnose-revise loop, scope, and judgment boundaries.
+- `references/cleaning-plan-schema.md`: `cleaning_plan` parameter contract.
+- `references/data-quality-rubric.md`: hard gates, diagnostic metrics, and user-judgment cases.
+- `scripts/workflow/run_stage.py`: unified profile/run/validate entrypoint.
+- `scripts/workflow/execute_plan.py`: stable plan executor for supported cleaning and merge operations.
+- `scripts/workflow/profile_data.py`: input data profiling.
+- `scripts/workflow/validate_output.py`: key, missingness, and required-column diagnostics for existing outputs.
+- `scripts/workflow/report.py`: human-readable report rendering from diagnostics.
+
 Two auxiliary top-level directories:
 
 - `quick-start/`: demo data and a thin launcher that reuses the `run_stage.py` pipeline.
@@ -230,9 +300,9 @@ Two auxiliary top-level directories:
 
 ## Design Choices
 
-### No `_shared` Layer Yet
+### Still No `_shared` Layer
 
-The project currently has one stable skill: `starlane-regression`. Shared contracts remain inside its own `references/` directory. A shared layer should be introduced only after a second stable skill creates real reuse pressure.
+The project currently has two stable skills: `starlane-regression` and `starlane-data-cleaner`. They share a few concepts such as profile, runtime, and output, but their contracts and user mental models remain different: regression centers on `analysis_plan` and candidate settings, while data cleaning centers on `cleaning_plan` and data-quality diagnostics. Keep code skill-local until real duplication creates a stable reuse boundary.
 
 ### Entrypoints Organized by Responsibility
 
