@@ -1,0 +1,9 @@
+[project]
+name = "starlane-data-cleaner"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "openpyxl",
+  "pandas",
+  "pyreadstat",
+]
