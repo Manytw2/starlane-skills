@@ -29,6 +29,7 @@ from scripts.envs.python.diagnostics import (  # noqa: E402
 )
 from scripts.envs.python.io import read_data, write_data  # noqa: E402
 from scripts.workflow.contracts import resolve_path, validate_plan  # noqa: E402
+from scripts.workflow.gates import ROW_EXPANSION_TOLERANCE, basic_hard_gate_failures  # noqa: E402
 from scripts.workflow.report import render_report  # noqa: E402
 from scripts.workflow.runtime import default_output_dir, ensure_dir, file_sha256, write_json  # noqa: E402
 
@@ -333,21 +334,12 @@ class PlanExecutor:
         critical_diag: dict[str, Any],
     ) -> list[str]:
         validation = self.plan.get("validation", {})
-        failures: list[str] = []
-        if required_missing:
-            failures.append("required_columns_missing")
-        if key_diag["missing_columns"]:
-            failures.append("target_key_columns_missing")
-        if key_diag["missing_rows"]:
-            failures.append("target_key_missing")
-        if validation.get("require_unique_target_key", True) and not key_diag["unique"]:
-            failures.append("duplicate_target_key")
-        max_missing = validation.get("max_critical_missing_rate")
-        if max_missing is not None:
-            for rate in critical_diag["missing_rates"].values():
-                if rate is not None and rate > max_missing:
-                    failures.append("critical_missing_rate_above_threshold")
-                    break
+        failures = basic_hard_gate_failures(
+            validation=validation,
+            required_missing=required_missing,
+            key_diag=key_diag,
+            critical_diag=critical_diag,
+        )
         max_unmatched = validation.get("max_unmatched_rate")
         if max_unmatched is not None:
             for merge in self.merges:
@@ -357,7 +349,7 @@ class PlanExecutor:
                     break
         if not validation.get("allow_row_expansion", False):
             for merge in self.merges:
-                if merge["row_expansion_ratio"] > 1.000001:
+                if merge["row_expansion_ratio"] > 1.0 + ROW_EXPANSION_TOLERANCE:
                     failures.append("unexpected_row_expansion")
                     break
         if validation.get("expected_row_min") is not None and len(df) < validation["expected_row_min"]:
