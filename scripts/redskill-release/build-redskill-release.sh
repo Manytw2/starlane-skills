@@ -2,17 +2,18 @@
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SKILL_NAME="starlane-regression"
-SKILL_DIR="$ROOT/skills/$SKILL_NAME"
+SKILL_NAME="starlane-skills"
+SKILL_NAMES="starlane-regression starlane-data-cleaner"
 RELEASE_DIR="$ROOT/release/redskill"
 REDSKILL_README="$ROOT/scripts/redskill-release/README.md"
+REDSKILL_ENTRY="$ROOT/scripts/redskill-release/SKILL.md"
 
 usage() {
   cat <<'EOF'
 Usage:
   scripts/redskill-release/build-redskill-release.sh VERSION
 
-Build the Red Skill upload zip for starlane-regression.
+Build the Red Skill upload zip for the Starlane Skills entry package.
 
 Example:
   scripts/redskill-release/build-redskill-release.sh v1.0.0
@@ -42,20 +43,31 @@ esac
 
 ZIP_PATH="$RELEASE_DIR/$SKILL_NAME-redskill-$VERSION.zip"
 
-if [ ! -f "$SKILL_DIR/SKILL.md" ]; then
-  echo "Missing skill entry: ${SKILL_DIR#$ROOT/}/SKILL.md" >&2
-  exit 1
-fi
-
-if [ ! -d "$SKILL_DIR/references" ]; then
-  echo "Missing expected skill references under ${SKILL_DIR#$ROOT/}" >&2
-  exit 1
-fi
-
 if [ ! -f "$REDSKILL_README" ]; then
   echo "Missing Red Skill package README: ${REDSKILL_README#$ROOT/}" >&2
   exit 1
 fi
+
+if [ ! -f "$REDSKILL_ENTRY" ]; then
+  echo "Missing Red Skill package entry: ${REDSKILL_ENTRY#$ROOT/}" >&2
+  exit 1
+fi
+
+for skill_name in $SKILL_NAMES; do
+  skill_dir="$ROOT/skills/$skill_name"
+  if [ ! -f "$skill_dir/SKILL.md" ]; then
+    echo "Missing skill entry: ${skill_dir#$ROOT/}/SKILL.md" >&2
+    exit 1
+  fi
+  if [ ! -f "$skill_dir/README.md" ]; then
+    echo "Missing skill design README: ${skill_dir#$ROOT/}/README.md" >&2
+    exit 1
+  fi
+  if [ ! -d "$skill_dir/references" ]; then
+    echo "Missing expected skill references under ${skill_dir#$ROOT/}" >&2
+    exit 1
+  fi
+done
 
 tmp_root="$(mktemp -d)"
 cleanup() {
@@ -64,11 +76,18 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 package_dir="$tmp_root/$SKILL_NAME"
-mkdir -p "$package_dir"
+mkdir -p "$package_dir/skills"
 
-cp "$SKILL_DIR/SKILL.md" "$package_dir/"
+cp "$REDSKILL_ENTRY" "$package_dir/SKILL.md"
 cp "$REDSKILL_README" "$package_dir/README.md"
-cp -R "$SKILL_DIR/references" "$package_dir/"
+for skill_name in $SKILL_NAMES; do
+  skill_dir="$ROOT/skills/$skill_name"
+  package_skill_dir="$package_dir/skills/$skill_name"
+  mkdir -p "$package_skill_dir"
+  cp "$skill_dir/SKILL.md" "$package_skill_dir/"
+  cp "$skill_dir/README.md" "$package_skill_dir/"
+  cp -R "$skill_dir/references" "$package_skill_dir/"
+done
 
 find "$package_dir" -name '.DS_Store' -type f -delete
 find "$package_dir" -name '__pycache__' -type d -prune -exec rm -rf {} +
@@ -100,6 +119,17 @@ if ! zipinfo -1 "$ZIP_PATH" | grep -qx "$SKILL_NAME/README.md"; then
   echo "Release zip is missing $SKILL_NAME/README.md" >&2
   exit 1
 fi
+
+for skill_name in $SKILL_NAMES; do
+  if ! zipinfo -1 "$ZIP_PATH" | grep -qx "$SKILL_NAME/skills/$skill_name/SKILL.md"; then
+    echo "Release zip is missing $SKILL_NAME/skills/$skill_name/SKILL.md" >&2
+    exit 1
+  fi
+  if ! zipinfo -1 "$ZIP_PATH" | grep -qx "$SKILL_NAME/skills/$skill_name/README.md"; then
+    echo "Release zip is missing $SKILL_NAME/skills/$skill_name/README.md" >&2
+    exit 1
+  fi
+done
 
 if zipinfo -1 "$ZIP_PATH" | grep -Eq '(^|/)(scripts/|pyproject\.toml$|uv\.lock$|.*\.do$)'; then
   echo "Release zip includes files filtered by Red SkillHub; keep this package to docs only." >&2
