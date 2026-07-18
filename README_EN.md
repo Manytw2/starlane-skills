@@ -25,10 +25,10 @@ Starlane helps with the coding and workflow burden behind empirical analysis: mo
 
 The following skills under `skills/` can be invoked:
 
-| Skill | Status | Purpose | Trigger |
-| --- | --- | --- | --- |
-| [`starlane-regression`](skills/starlane-regression/SKILL.md) | Stable | Regression workflow for empirical research in economics and management: data profiling, guided analysis planning, candidate-combination enumeration and scoring, final regression output with reproducible source code, Python / Stata execution envs | `/starlane-regression`, or describe needs such as "regression analysis", "baseline regression", or "robustness checks" |
-| [`starlane-data-cleaner`](skills/starlane-data-cleaner/SKILL.md) | Stable | Data cleaning and merge workflow for economics and management research: data profiling, parameterized cleaning plans, stable Python execution, key/merge/missingness/row-flow diagnostics, and cleaning reports | `/starlane-data-cleaner`, or describe needs such as "clean data", "merge data", or "construct analysis dataset" |
+| Skill | Status | Purpose | Trigger | Details |
+| --- | --- | --- | --- | --- |
+| [`starlane-regression`](skills/starlane-regression/SKILL.md) | Stable | Regression workflow for empirical research in economics and management: data profiling, guided analysis planning, candidate-combination enumeration and scoring, final regression output with reproducible source code, Python / Stata execution envs | `/starlane-regression`, or describe needs such as "regression analysis", "baseline regression", or "robustness checks" | [Chinese design note](skills/starlane-regression/README.md) |
+| [`starlane-data-cleaner`](skills/starlane-data-cleaner/SKILL.md) | Stable | Data cleaning and merge workflow for economics and management research: data profiling, parameterized cleaning plans, stable Python execution, key/merge/missingness/row-flow diagnostics, and cleaning reports | `/starlane-data-cleaner`, or describe needs such as "clean data", "merge data", or "construct analysis dataset" | [Chinese design note](skills/starlane-data-cleaner/README.md) |
 
 ## Quick Start
 
